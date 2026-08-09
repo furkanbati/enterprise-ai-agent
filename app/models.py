@@ -1,17 +1,26 @@
 from dataclasses import dataclass
 from typing import Any
 
+from pydantic import BaseModel
+
+
+class PlannerResponse(BaseModel):
+    tool: str | None
+    arguments: dict[str, Any]
+
 
 @dataclass
 class ToolCall:
     tool: str
     arguments: dict[str, Any]
 
+
 @dataclass
 class ToolResult:
     success: bool
     result: Any = None
     error: str | None = None
+
 
 @dataclass
 class AgentResult:

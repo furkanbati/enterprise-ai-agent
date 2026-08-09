@@ -4,6 +4,9 @@ from app.models import AgentResult
 from app.planner import Planner
 
 
+MAX_RETRIES = 1
+
+
 class Pipeline:
 
     def __init__(
@@ -26,40 +29,52 @@ class Pipeline:
                 answer=answer,
             )
 
-        tool_result = self.executor.execute(tool_call)
+        for attempt in range(MAX_RETRIES + 1):
+            tool_result = self.executor.execute(tool_call)
 
-        if not tool_result.success:
-            answer = self.generator.generate(
-                prompt=self._build_error_prompt(
-                    question,
-                    tool_call,
-                    tool_result.error,
-                ),
-                system_prompt=(
-                    "You are a helpful AI assistant. "
-                    "A tool failed while processing the user's request. "
-                    "Explain the issue clearly and do not invent a result."
-                ),
+            if tool_result.success:
+                answer = self.generator.generate(
+                    prompt=self._build_final_prompt(
+                        question,
+                        tool_call,
+                        tool_result.result,
+                    ),
+                    system_prompt=(
+                        "You are a helpful AI assistant. "
+                        "Answer the user's question using the tool result. "
+                        "Do not mention internal tools or planning."
+                    ),
+                )
+
+                return AgentResult(
+                    answer=answer,
+                    tool=tool_call.tool,
+                    arguments=tool_call.arguments,
+                    tool_result=tool_result.result,
+                )
+
+            if attempt >= MAX_RETRIES:
+                break
+
+            tool_call = self.planner.plan(
+                question=question,
+                previous_tool=tool_call,
+                previous_error=tool_result.error,
             )
 
-            return AgentResult(
-                answer=answer,
-                tool=tool_call.tool,
-                arguments=tool_call.arguments,
-                tool_result=None,
-                error=tool_result.error,
-            )
+            if tool_call is None:
+                break
 
         answer = self.generator.generate(
-            prompt=self._build_final_prompt(
+            prompt=self._build_error_prompt(
                 question,
                 tool_call,
-                tool_result.result,
+                tool_result.error,
             ),
             system_prompt=(
                 "You are a helpful AI assistant. "
-                "Answer the user's question using the tool result. "
-                "Do not mention internal tools or planning."
+                "A tool failed while processing the user's request. "
+                "Explain the issue clearly and do not invent a result."
             ),
         )
 
@@ -67,7 +82,8 @@ class Pipeline:
             answer=answer,
             tool=tool_call.tool,
             arguments=tool_call.arguments,
-            tool_result=tool_result.result,
+            tool_result=None,
+            error=tool_result.error,
         )
 
     def _build_final_prompt(

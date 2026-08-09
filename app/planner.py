@@ -1,7 +1,9 @@
 import json
 
-from app.models import ToolCall
+from pydantic import ValidationError
+
 from app.generator import Generator
+from app.models import PlannerResponse, ToolCall
 from app.tool_registry import ToolRegistry
 
 
@@ -17,17 +19,17 @@ Available tools:
 If a tool is required, return ONLY valid JSON:
 
 {{
-    "tool": "tool_name",
-    "arguments": {{
-        "argument_name": "value"
-    }}
+"tool": "tool_name",
+"arguments": {{
+"argument_name": "value"
+}}
 }}
 
 If no tool is required, return ONLY:
 
 {{
-    "tool": null,
-    "arguments": {{}}
+"tool": null,
+"arguments": {{}}
 }}
 
 Do not include markdown.
@@ -45,31 +47,88 @@ class Planner:
         self.generator = generator
         self.registry = registry
 
-    def plan(self, question: str) -> ToolCall | None:
+    def plan(
+        self,
+        question: str,
+        previous_tool=None,
+        previous_error: str | None = None,
+    ) -> ToolCall | None:
         tools = self.registry.descriptions()
 
-        system_prompt = SYSTEM_PROMPT.format(tools=tools)
+        system_prompt = SYSTEM_PROMPT.format(
+            tools=tools,
+        )
+
+        prompt = question
+
+        if previous_error:
+            prompt = f"""
+User question:
+{question}
+
+A previous tool attempt failed.
+
+Previous tool:
+{previous_tool.tool}
+
+Previous arguments:
+{previous_tool.arguments}
+
+Previous error:
+{previous_error}
+
+Try to correct the tool call if the error can be corrected.
+
+IMPORTANT:
+- Do not change the user's requested operation.
+- Do not invent different values.
+- Do not replace the user's requested calculation with another calculation.
+- If the requested operation itself is invalid or cannot be completed,
+  return:
+  {{
+    "tool": null,
+    "arguments": {{}}
+  }}
+"""
 
         response = self.generator.generate(
-            prompt=question,
+            prompt=prompt,
             system_prompt=system_prompt,
             json_mode=True,
         )
 
-        data = self._parse_response(response)
+        planner_response = self._parse_response(response)
 
-        if data["tool"] is None:
+        if planner_response.tool is None:
             return None
 
+        if planner_response.tool not in {
+            tool["name"] for tool in tools
+        }:
+            raise ValueError(
+                f"Planner selected unknown tool: "
+                f"{planner_response.tool}"
+            )
+
         return ToolCall(
-            tool=data["tool"],
-            arguments=data["arguments"],
+            tool=planner_response.tool,
+            arguments=planner_response.arguments,
         )
 
-    def _parse_response(self, response: str) -> dict:
+    def _parse_response(
+        self,
+        response: str,
+    ) -> PlannerResponse:
         try:
-            return json.loads(response)
+            data = json.loads(response)
         except json.JSONDecodeError as exc:
             raise ValueError(
                 f"Planner returned invalid JSON: {response}"
+            ) from exc
+
+        try:
+            return PlannerResponse.model_validate(data)
+        except ValidationError as exc:
+            raise ValueError(
+                f"Planner returned invalid structure: {data}"
             ) from exc
