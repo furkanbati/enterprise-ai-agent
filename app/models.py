@@ -1,12 +1,28 @@
 from dataclasses import dataclass
 from typing import Any
 
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict, model_validator
 
 
 class PlannerResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     tool: str | None
     arguments: dict[str, Any]
+
+    @model_validator(mode="after")
+    def validate_tool_arguments(self):
+        if self.tool is None and self.arguments:
+            raise ValueError(
+                "Arguments must be empty when no tool is selected"
+            )
+
+        if self.tool is not None and not self.tool.strip():
+            raise ValueError(
+                "Tool name cannot be empty"
+            )
+
+        return self
 
 
 @dataclass
