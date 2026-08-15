@@ -17,3 +17,7 @@ MAX_RETRIES = int(
 RETRY_BASE_DELAY = float(
     os.getenv("RETRY_BASE_DELAY", "1.0")
 )
+
+TOOL_MAX_RETRIES = int(
+    os.getenv("TOOL_MAX_RETRIES", "1")
+)

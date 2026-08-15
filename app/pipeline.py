@@ -1,10 +1,8 @@
 from app.executor import Executor
+from app.config import TOOL_MAX_RETRIES
 from app.generator import Generator
 from app.models import AgentResult
 from app.planner import Planner
-
-
-MAX_RETRIES = 1
 
 
 class Pipeline:
@@ -29,7 +27,7 @@ class Pipeline:
                 answer=answer,
             )
 
-        for attempt in range(MAX_RETRIES + 1):
+        for attempt in range(TOOL_MAX_RETRIES + 1):
             tool_result = self.executor.execute(tool_call)
 
             if tool_result.success:
@@ -53,7 +51,7 @@ class Pipeline:
                     tool_result=tool_result.result,
                 )
 
-            if attempt >= MAX_RETRIES:
+            if attempt >= TOOL_MAX_RETRIES:
                 break
 
             corrected_tool_call = self.planner.plan(
