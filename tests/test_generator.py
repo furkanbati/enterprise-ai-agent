@@ -1,12 +1,14 @@
 import pytest
+from ollama import ResponseError
 
 from app.generator import Generator
 
 
 class FakeClient:
-    def __init__(self, responses=None, errors=None):
+    def __init__(self, responses=None, errors=None, show_error=None):
         self.responses = responses or []
         self.errors = errors or []
+        self.show_error = show_error
         self.calls = []
         self.call_count = 0
 
@@ -24,6 +26,12 @@ class FakeClient:
 
         self.call_count += 1
         return response
+
+    def show(self, model):
+        if self.show_error:
+            raise self.show_error
+
+        return {"model": model}
 
 
 def create_generator(client):
@@ -57,6 +65,32 @@ def test_generate_returns_response_content():
     )
 
     assert result == "Hello!"
+
+
+def test_is_available_returns_true_when_configured_model_is_available():
+    client = FakeClient()
+    generator = create_generator(client)
+
+    assert generator.is_available() is True
+
+
+@pytest.mark.parametrize(
+    "error",
+    [
+        ConnectionError("connection failed"),
+        ResponseError(
+            "model not found",
+            status_code=404,
+        ),
+    ],
+)
+def test_is_available_returns_false_when_configured_model_is_unavailable(
+    error,
+):
+    client = FakeClient(show_error=error)
+    generator = create_generator(client)
+
+    assert generator.is_available() is False
 
 
 def test_generate_sends_system_prompt():

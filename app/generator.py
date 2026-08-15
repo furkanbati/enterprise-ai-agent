@@ -24,6 +24,14 @@ class Generator:
         self.max_retries = max_retries
         self.retry_base_delay = retry_base_delay
 
+    def is_available(self) -> bool:
+        try:
+            self.client.show(self.model)
+        except (ConnectionError, ResponseError):
+            return False
+
+        return True
+
     def generate(
         self,
         prompt: str,

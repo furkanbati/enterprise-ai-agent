@@ -2,7 +2,7 @@ import logging
 
 from fastapi import FastAPI, HTTPException
 from ollama import ResponseError
-from pydantic import BaseModel
+from pydantic import BaseModel, Field, field_validator
 
 from app.executor import Executor
 from app.generator import Generator
@@ -23,7 +23,17 @@ logger = logging.getLogger(__name__)
 
 
 class ChatRequest(BaseModel):
-    question: str
+    question: str = Field(max_length=4_000)
+
+    @field_validator("question")
+    @classmethod
+    def normalize_question(cls, value: str) -> str:
+        question = value.strip()
+
+        if not question:
+            raise ValueError("Question cannot be blank.")
+
+        return question
 
 
 class ChatResponse(BaseModel):
@@ -54,6 +64,18 @@ pipeline = Pipeline(
 @app.get("/health")
 def health():
     return {"status": "ok"}
+
+
+@app.get("/ready")
+def ready():
+    if not generator.is_available():
+        logger.warning("AI service is not ready")
+        raise HTTPException(
+            status_code=503,
+            detail="The AI service is temporarily unavailable.",
+        )
+
+    return {"status": "ready"}
 
 
 @app.post("/chat", response_model=ChatResponse)
