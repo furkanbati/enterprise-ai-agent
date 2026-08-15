@@ -131,11 +131,13 @@ IMPORTANT:
         arguments: dict[str, Any],
         parameters: dict[str, Any],
     ) -> None:
-        expected = set(parameters)
+        properties = parameters.get("properties", {})
+        required = parameters.get("required", [])
+
         provided = set(arguments)
 
-        missing = expected - provided
-        unexpected = provided - expected
+        missing = set(required) - provided
+        unexpected = provided - set(properties)
 
         if missing:
             raise ValueError(
@@ -147,7 +149,10 @@ IMPORTANT:
                 f"Unexpected tool arguments: {sorted(unexpected)}"
             )
 
-        for name, schema in parameters.items():
+        for name, schema in properties.items():
+            if name not in arguments:
+                continue
+
             expected_type = schema.get("type")
             value = arguments[name]
 
@@ -157,7 +162,7 @@ IMPORTANT:
                 )
 
             if expected_type == "number" and (
-                not isinstance(value, int)
+                not isinstance(value, (int, float))
                 or isinstance(value, bool)
             ):
                 raise ValueError(

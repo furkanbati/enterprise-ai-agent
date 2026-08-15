@@ -18,9 +18,13 @@ class FakeRegistry:
                 "name": "calculator",
                 "description": "Performs calculations.",
                 "parameters": {
-                    "expression": {
-                        "type": "string",
-                    }
+                    "type": "object",
+                    "properties": {
+                        "expression": {
+                            "type": "string",
+                        }
+                    },
+                    "required": ["expression"],
                 },
             }
         ]
@@ -41,9 +45,13 @@ def test_valid_arguments():
             "expression": "10 / 2",
         },
         parameters={
-            "expression": {
-                "type": "string",
+            "type": "object",
+            "properties": {
+                "expression": {
+                    "type": "string",
+                }
             },
+            "required": ["expression"],
         },
     )
 
@@ -58,9 +66,13 @@ def test_missing_arguments():
         planner._validate_arguments(
             arguments={},
             parameters={
-                "expression": {
-                    "type": "string",
+                "type": "object",
+                "properties": {
+                    "expression": {
+                        "type": "string",
+                    }
                 },
+                "required": ["expression"],
             },
         )
 
@@ -78,9 +90,13 @@ def test_unexpected_arguments():
                 "foo": "bar",
             },
             parameters={
-                "expression": {
-                    "type": "string",
+                "type": "object",
+                "properties": {
+                    "expression": {
+                        "type": "string",
+                    }
                 },
+                "required": ["expression"],
             },
         )
 
@@ -97,9 +113,13 @@ def test_rejects_wrong_string_type():
                 "expression": 125,
             },
             parameters={
-                "expression": {
-                    "type": "string",
+                "type": "object",
+                "properties": {
+                    "expression": {
+                        "type": "string",
+                    }
                 },
+                "required": ["expression"],
             },
         )
 
@@ -116,9 +136,13 @@ def test_rejects_wrong_boolean_type():
                 "enabled": "true",
             },
             parameters={
-                "enabled": {
-                    "type": "boolean",
+                "type": "object",
+                "properties": {
+                    "enabled": {
+                        "type": "boolean",
+                    }
                 },
+                "required": ["enabled"],
             },
         )
 
@@ -126,7 +150,10 @@ def test_rejects_wrong_boolean_type():
 def test_plan_returns_tool_call():
     planner = Planner(
         generator=FakeGenerator(
-            response='{"tool": "calculator", "arguments": {"expression": "10 / 2"}}'
+            response=(
+                '{"tool": "calculator", '
+                '"arguments": {"expression": "10 / 2"}}'
+            )
         ),
         registry=FakeRegistry(),
     )
@@ -152,10 +179,14 @@ def test_plan_returns_none_when_no_tool_required():
 
     assert result is None
 
+
 def test_plan_rejects_invalid_arguments():
     planner = Planner(
         generator=FakeGenerator(
-            response='{"tool": "calculator", "arguments": {"foo": "bar"}}'
+            response=(
+                '{"tool": "calculator", '
+                '"arguments": {"foo": "bar"}}'
+            )
         ),
         registry=FakeRegistry(),
     )
