@@ -1,3 +1,5 @@
+import pytest
+
 from app.tool_registry import ToolRegistry
 
 
@@ -108,3 +110,16 @@ def test_registry_registers_multiple_tools():
     assert len(descriptions) == 2
     assert descriptions[0]["name"] == "calculator"
     assert descriptions[1]["name"] == "datetime"
+
+
+def test_registry_rejects_duplicate_tool_names():
+    with pytest.raises(
+        ValueError,
+        match="Duplicate tool name: calculator",
+    ):
+        ToolRegistry(
+            [
+                FakeTool(name="calculator"),
+                FakeTool(name="calculator"),
+            ]
+        )
