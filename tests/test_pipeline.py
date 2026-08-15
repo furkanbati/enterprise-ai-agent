@@ -48,6 +48,33 @@ class FakeGenerator:
         return self.answer
 
 
+class SequencedPlanner:
+    def __init__(self, tool_calls):
+        self.tool_calls = tool_calls
+        self.calls = []
+
+    def plan(self, question, previous_tool=None, previous_error=None):
+        self.calls.append(
+            {
+                "question": question,
+                "previous_tool": previous_tool,
+                "previous_error": previous_error,
+            }
+        )
+
+        return self.tool_calls.pop(0)
+
+
+class SequencedExecutor:
+    def __init__(self, results):
+        self.results = results
+        self.received_tool_calls = []
+
+    def execute(self, tool_call):
+        self.received_tool_calls.append(tool_call)
+        return self.results.pop(0)
+
+
 def test_pipeline_without_tool():
     planner = FakePlanner(tool_call=None)
     executor = FakeExecutor(
@@ -148,3 +175,72 @@ def test_pipeline_with_failed_tool():
         "expression": "10 / 0",
     }
     assert result.error == "division by zero"
+
+
+def test_pipeline_recovers_with_corrected_tool_call():
+    failed_tool_call = ToolCall(
+        tool="calculator",
+        arguments={"expression": "10 / 0"},
+    )
+    corrected_tool_call = ToolCall(
+        tool="calculator",
+        arguments={"expression": "10 / 2"},
+    )
+    planner = SequencedPlanner([failed_tool_call, corrected_tool_call])
+    executor = SequencedExecutor(
+        [
+            ToolResult(success=False, error="division by zero"),
+            ToolResult(success=True, result=5),
+        ]
+    )
+    generator = FakeGenerator(answer="The answer is 5.")
+
+    pipeline = Pipeline(
+        planner=planner,
+        executor=executor,
+        generator=generator,
+    )
+
+    result = pipeline.run("What is 10 / 2?")
+
+    assert result.answer == "The answer is 5."
+    assert result.tool == "calculator"
+    assert result.arguments == {"expression": "10 / 2"}
+    assert result.tool_result == 5
+    assert result.error is None
+    assert executor.received_tool_calls == [
+        failed_tool_call,
+        corrected_tool_call,
+    ]
+    assert planner.calls[1]["previous_tool"] == failed_tool_call
+    assert planner.calls[1]["previous_error"] == "division by zero"
+
+
+def test_pipeline_returns_failure_when_replanning_declines_tool():
+    failed_tool_call = ToolCall(
+        tool="calculator",
+        arguments={"expression": "10 / 0"},
+    )
+    planner = SequencedPlanner([failed_tool_call, None])
+    executor = SequencedExecutor(
+        [ToolResult(success=False, error="division by zero")]
+    )
+    generator = FakeGenerator(
+        answer="The calculation could not be completed."
+    )
+
+    pipeline = Pipeline(
+        planner=planner,
+        executor=executor,
+        generator=generator,
+    )
+
+    result = pipeline.run("What is 10 / 0?")
+
+    assert result.answer == "The calculation could not be completed."
+    assert result.tool == "calculator"
+    assert result.arguments == {"expression": "10 / 0"}
+    assert result.tool_result is None
+    assert result.error == "division by zero"
+    assert executor.received_tool_calls == [failed_tool_call]
+    assert len(planner.calls) == 2

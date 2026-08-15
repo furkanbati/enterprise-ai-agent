@@ -1,4 +1,7 @@
-from fastapi import FastAPI
+import logging
+
+from fastapi import FastAPI, HTTPException
+from ollama import ResponseError
 from pydantic import BaseModel
 
 from app.executor import Executor
@@ -15,6 +18,8 @@ app = FastAPI(
     title="Enterprise AI Agent",
     version="0.1.0",
 )
+
+logger = logging.getLogger(__name__)
 
 
 class ChatRequest(BaseModel):
@@ -53,7 +58,20 @@ def health():
 
 @app.post("/chat", response_model=ChatResponse)
 def chat(request: ChatRequest):
-    result: AgentResult = pipeline.run(request.question)
+    try:
+        result: AgentResult = pipeline.run(request.question)
+    except ConnectionError as exc:
+        logger.exception("AI service connection failed")
+        raise HTTPException(
+            status_code=503,
+            detail="The AI service is temporarily unavailable.",
+        ) from exc
+    except (ResponseError, ValueError) as exc:
+        logger.exception("AI service returned an invalid response")
+        raise HTTPException(
+            status_code=502,
+            detail="The AI service returned an invalid response.",
+        ) from exc
 
     return ChatResponse(
         answer=result.answer,

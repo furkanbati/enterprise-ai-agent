@@ -56,14 +56,16 @@ class Pipeline:
             if attempt >= MAX_RETRIES:
                 break
 
-            tool_call = self.planner.plan(
+            corrected_tool_call = self.planner.plan(
                 question=question,
                 previous_tool=tool_call,
                 previous_error=tool_result.error,
             )
 
-            if tool_call is None:
+            if corrected_tool_call is None:
                 break
+
+            tool_call = corrected_tool_call
 
         answer = self.generator.generate(
             prompt=self._build_error_prompt(
