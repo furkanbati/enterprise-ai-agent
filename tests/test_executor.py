@@ -1,17 +1,37 @@
 import pytest
-
+import time
 from app.executor import Executor
 from app.models import ToolCall
 
 
 class FakeTool:
-    def __init__(self, result=42, error=None):
+    def __init__(
+        self,
+        result=42,
+        error=None,
+        delay=0,
+    ):
         self.result = result
         self.error = error
+        self.delay = delay
         self.received_arguments = None
+
+        self.parameters = {
+            "type": "object",
+            "properties": {
+                "expression": {
+                    "type": "string",
+                },
+            },
+            "required": ["expression"],
+            "additionalProperties": False,
+        }
 
     def execute(self, arguments):
         self.received_arguments = arguments
+
+        if self.delay:
+            time.sleep(self.delay)
 
         if self.error:
             raise ValueError(self.error)
@@ -93,3 +113,88 @@ def test_execute_handles_unknown_tool():
     assert result.success is False
     assert result.result is None
     assert result.error == "Unknown tool: unknown"
+
+def test_execute_rejects_invalid_arguments():
+    tool = FakeTool(result=42)
+    executor = Executor(FakeRegistry(tool))
+
+    tool_call = ToolCall(
+        tool="calculator",
+        arguments={"expression": 123},
+    )
+
+    result = executor.execute(tool_call)
+
+    assert result.success is False
+    assert result.result is None
+    assert "expression" in result.error
+    assert tool.received_arguments is None
+
+def test_execute_rejects_unexpected_arguments():
+    tool = FakeTool(result=42)
+    executor = Executor(FakeRegistry(tool))
+
+    tool_call = ToolCall(
+        tool="calculator",
+        arguments={
+            "expression": "6 * 7",
+            "unexpected": True,
+        },
+    )
+
+    result = executor.execute(tool_call)
+
+    assert result.success is False
+    assert result.result is None
+    assert tool.received_arguments is None
+
+def test_execute_times_out_slow_tool():
+    tool = FakeTool(
+        result=42,
+        delay=0.2,
+    )
+
+    executor = Executor(
+        FakeRegistry(tool),
+        timeout=0.05,
+    )
+
+    tool_call = ToolCall(
+        tool="calculator",
+        arguments={"expression": "6 * 7"},
+    )
+
+    start = time.perf_counter()
+
+    result = executor.execute(tool_call)
+
+    elapsed = time.perf_counter() - start
+
+    assert result.success is False
+    assert result.result is None
+    assert result.error == (
+        "Tool execution timed out after 0.05 seconds."
+    )
+    assert elapsed < 0.15
+
+def test_execute_completes_before_timeout():
+    tool = FakeTool(
+        result=42,
+        delay=0.01,
+    )
+
+    executor = Executor(
+        FakeRegistry(tool),
+        timeout=0.1,
+    )
+
+    tool_call = ToolCall(
+        tool="calculator",
+        arguments={"expression": "6 * 7"},
+    )
+
+    result = executor.execute(tool_call)
+
+    assert result.success is True
+    assert result.result == 42
+    assert result.error is None

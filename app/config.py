@@ -21,3 +21,16 @@ RETRY_BASE_DELAY = float(
 TOOL_MAX_RETRIES = int(
     os.getenv("TOOL_MAX_RETRIES", "1")
 )
+
+TOOL_TIMEOUT = float(
+    os.getenv("TOOL_TIMEOUT", "5.0")
+)
+
+if MAX_RETRIES < 0:
+    raise ValueError("MAX_RETRIES must be zero or greater.")
+
+if RETRY_BASE_DELAY < 0:
+    raise ValueError("RETRY_BASE_DELAY must be zero or greater.")
+
+if TOOL_MAX_RETRIES < 0:
+    raise ValueError("TOOL_MAX_RETRIES must be zero or greater.")
