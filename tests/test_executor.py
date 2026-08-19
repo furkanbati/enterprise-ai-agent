@@ -4,16 +4,20 @@ from app.executor import Executor
 from app.models import ToolCall
 
 
+
 class FakeTool:
     def __init__(
         self,
         result=42,
         error=None,
         delay=0,
+        fail_times=0,
     ):
         self.result = result
         self.error = error
         self.delay = delay
+        self.fail_times = fail_times
+        self.call_count = 0
         self.received_arguments = None
 
         self.parameters = {
@@ -28,10 +32,14 @@ class FakeTool:
         }
 
     def execute(self, arguments):
+        self.call_count += 1
         self.received_arguments = arguments
 
         if self.delay:
             time.sleep(self.delay)
+
+        if self.call_count <= self.fail_times:
+            raise ConnectionError("temporary failure")
 
         if self.error:
             raise ValueError(self.error)
@@ -157,6 +165,7 @@ def test_execute_times_out_slow_tool():
     executor = Executor(
         FakeRegistry(tool),
         timeout=0.05,
+        max_retries=0,
     )
 
     tool_call = ToolCall(
@@ -198,3 +207,73 @@ def test_execute_completes_before_timeout():
     assert result.success is True
     assert result.result == 42
     assert result.error is None
+
+def test_execute_retries_retryable_tool_error():
+    tool = FakeTool(
+        result=42,
+        fail_times=1,
+    )
+
+    executor = Executor(
+        FakeRegistry(tool),
+        timeout=0.1,
+        max_retries=1,
+    )
+
+    tool_call = ToolCall(
+        tool="calculator",
+        arguments={"expression": "6 * 7"},
+    )
+
+    result = executor.execute(tool_call)
+
+    assert result.success is True
+    assert result.result == 42
+    assert tool.call_count == 2
+
+
+def test_execute_returns_failure_after_retries_exhausted():
+    tool = FakeTool(
+        result=42,
+        fail_times=3,
+    )
+
+    executor = Executor(
+        FakeRegistry(tool),
+        timeout=0.1,
+        max_retries=2,
+    )
+
+    tool_call = ToolCall(
+        tool="calculator",
+        arguments={"expression": "6 * 7"},
+    )
+
+    result = executor.execute(tool_call)
+
+    assert result.success is False
+    assert result.result is None
+    assert result.error == "temporary failure"
+    assert tool.call_count == 3
+
+def test_execute_does_not_retry_non_retryable_error():
+    tool = FakeTool(
+        error="division by zero",
+    )
+
+    executor = Executor(
+        FakeRegistry(tool),
+        timeout=0.1,
+        max_retries=3,
+    )
+
+    tool_call = ToolCall(
+        tool="calculator",
+        arguments={"expression": "10 / 0"},
+    )
+
+    result = executor.execute(tool_call)
+
+    assert result.success is False
+    assert result.error == "division by zero"
+    assert tool.call_count == 1

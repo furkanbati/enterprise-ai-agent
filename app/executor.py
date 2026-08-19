@@ -1,6 +1,7 @@
+import time
 from concurrent.futures import ThreadPoolExecutor, TimeoutError
 
-from app.config import TOOL_MAX_RETRIES, TOOL_TIMEOUT
+from app.config import RETRY_BASE_DELAY, TOOL_MAX_RETRIES, TOOL_TIMEOUT
 from app.models import ToolCall, ToolResult
 from app.tool_registry import ToolRegistry
 from app.tool_validator import ToolArgumentValidator
@@ -14,11 +15,16 @@ class Executor:
         validator: ToolArgumentValidator | None = None,
         timeout: float = TOOL_TIMEOUT,
         max_retries: int = TOOL_MAX_RETRIES,
+        retry_base_delay: float = RETRY_BASE_DELAY,
     ):
         self.registry = registry
         self.validator = validator or ToolArgumentValidator()
         self.timeout = timeout
         self.max_retries = max_retries
+        self.retry_base_delay = retry_base_delay
+
+    def _get_retry_delay(self, attempt: int) -> float:
+        return self.retry_base_delay * (2**attempt)
 
     def execute(self, tool_call: ToolCall) -> ToolResult:
         try:
@@ -57,12 +63,20 @@ class Executor:
                             ),
                         )
 
+                    time.sleep(
+                        self._get_retry_delay(attempt)
+                    )
+
                 except ConnectionError as exc:
                     if attempt >= self.max_retries:
                         return ToolResult(
                             success=False,
                             error=str(exc),
                         )
+
+                    time.sleep(
+                        self._get_retry_delay(attempt)
+                    )
 
                 except Exception as exc:
                     return ToolResult(
@@ -71,9 +85,7 @@ class Executor:
                     )
 
                 finally:
-                    pool.shutdown(
-                        wait=False
-                    )
+                    pool.shutdown(wait=False)
 
             return ToolResult(
                 success=False,
