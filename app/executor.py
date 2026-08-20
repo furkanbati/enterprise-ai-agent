@@ -1,7 +1,7 @@
 import time
 from concurrent.futures import ThreadPoolExecutor, TimeoutError
 
-from app.config import RETRY_BASE_DELAY, TOOL_MAX_RETRIES, TOOL_TIMEOUT
+from app.config import RETRY_BASE_DELAY, EXECUTOR_MAX_RETRIES, TOOL_TIMEOUT
 from app.models import ToolCall, ToolResult
 from app.tool_registry import ToolRegistry
 from app.tool_validator import ToolArgumentValidator
@@ -14,7 +14,7 @@ class Executor:
         registry: ToolRegistry,
         validator: ToolArgumentValidator | None = None,
         timeout: float = TOOL_TIMEOUT,
-        max_retries: int = TOOL_MAX_RETRIES,
+        max_retries: int = EXECUTOR_MAX_RETRIES,
         retry_base_delay: float = RETRY_BASE_DELAY,
     ):
         self.registry = registry

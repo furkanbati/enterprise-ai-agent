@@ -8,9 +8,11 @@ import pytest
 @pytest.mark.parametrize(
     ("name", "value"),
     [
-        ("MAX_RETRIES", "-1"),
+        ("GENERATOR_MAX_RETRIES", "-1"),
+        ("EXECUTOR_MAX_RETRIES", "-1"),
+        ("PIPELINE_MAX_REPLANS", "-1"),
         ("RETRY_BASE_DELAY", "-1"),
-        ("TOOL_MAX_RETRIES", "-1"),
+        ("TOOL_TIMEOUT", "-1"),
     ],
 )
 def test_rejects_negative_retry_settings(name, value):

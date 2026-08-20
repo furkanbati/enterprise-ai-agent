@@ -1,7 +1,6 @@
 import json
 
 from pydantic import ValidationError
-from typing import Any
 from app.generator import Generator
 from app.models import PlannerResponse, ToolCall
 from app.tool_registry import ToolRegistry

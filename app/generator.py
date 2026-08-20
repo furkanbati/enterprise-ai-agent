@@ -4,7 +4,7 @@ from ollama import Client, ResponseError
 
 from app.config import (
     CHAT_MODEL,
-    MAX_RETRIES,
+    GENERATOR_MAX_RETRIES,
     OLLAMA_HOST,
     RETRY_BASE_DELAY,
 )
@@ -16,7 +16,7 @@ class Generator:
         self,
         host: str = OLLAMA_HOST,
         model: str = CHAT_MODEL,
-        max_retries: int = MAX_RETRIES,
+        max_retries: int = GENERATOR_MAX_RETRIES,
         retry_base_delay: float = RETRY_BASE_DELAY,
     ):
         self.client = Client(host=host)
