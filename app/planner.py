@@ -110,69 +110,11 @@ IMPORTANT:
                 f"{planner_response.tool}"
             )
 
-        selected_tool = next(
-            tool
-            for tool in tools
-            if tool["name"] == planner_response.tool
-        )
-
-        self._validate_arguments(
-            planner_response.arguments,
-            selected_tool["parameters"],
-        )
 
         return ToolCall(
             tool=planner_response.tool,
             arguments=planner_response.arguments,
         )
-
-    def _validate_arguments(
-        self,
-        arguments: dict[str, Any],
-        parameters: dict[str, Any],
-    ) -> None:
-        properties = parameters.get("properties", {})
-        required = parameters.get("required", [])
-
-        provided = set(arguments)
-
-        missing = set(required) - provided
-        unexpected = provided - set(properties)
-
-        if missing:
-            raise ValueError(
-                f"Missing tool arguments: {sorted(missing)}"
-            )
-
-        if unexpected:
-            raise ValueError(
-                f"Unexpected tool arguments: {sorted(unexpected)}"
-            )
-
-        for name, schema in properties.items():
-            if name not in arguments:
-                continue
-
-            expected_type = schema.get("type")
-            value = arguments[name]
-
-            if expected_type == "string" and not isinstance(value, str):
-                raise ValueError(
-                    f"Tool argument '{name}' must be a string"
-                )
-
-            if expected_type == "number" and (
-                not isinstance(value, (int, float))
-                or isinstance(value, bool)
-            ):
-                raise ValueError(
-                    f"Tool argument '{name}' must be a number"
-                )
-
-            if expected_type == "boolean" and not isinstance(value, bool):
-                raise ValueError(
-                    f"Tool argument '{name}' must be a boolean"
-                )
 
     def _parse_response(
         self,
