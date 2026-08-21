@@ -36,6 +36,9 @@ class ToolResult:
     success: bool
     result: Any = None
     error: str | None = None
+    tool: str | None = None
+    attempts: int = 0
+    execution_time: float = 0.0
 
 
 @dataclass

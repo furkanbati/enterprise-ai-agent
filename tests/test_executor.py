@@ -1,8 +1,7 @@
-import pytest
 import time
+
 from app.executor import Executor
 from app.models import ToolCall
-
 
 
 class FakeTool:
@@ -72,6 +71,9 @@ def test_execute_success():
     assert result.success is True
     assert result.result == 42
     assert result.error is None
+    assert result.tool == "calculator"
+    assert result.attempts == 1
+    assert result.execution_time > 0
 
 
 def test_execute_passes_arguments_to_tool():
@@ -106,6 +108,9 @@ def test_execute_handles_tool_error():
     assert result.success is False
     assert result.result is None
     assert result.error == "division by zero"
+    assert result.tool == "calculator"
+    assert result.attempts == 1
+    assert result.execution_time > 0
 
 
 def test_execute_handles_unknown_tool():
@@ -121,6 +126,10 @@ def test_execute_handles_unknown_tool():
     assert result.success is False
     assert result.result is None
     assert result.error == "Unknown tool: unknown"
+    assert result.tool == "unknown"
+    assert result.attempts == 0
+    assert result.execution_time >= 0
+
 
 def test_execute_rejects_invalid_arguments():
     tool = FakeTool(result=42)
@@ -136,7 +145,11 @@ def test_execute_rejects_invalid_arguments():
     assert result.success is False
     assert result.result is None
     assert "expression" in result.error
+    assert result.tool == "calculator"
+    assert result.attempts == 0
+    assert result.execution_time >= 0
     assert tool.received_arguments is None
+
 
 def test_execute_rejects_unexpected_arguments():
     tool = FakeTool(result=42)
@@ -154,7 +167,11 @@ def test_execute_rejects_unexpected_arguments():
 
     assert result.success is False
     assert result.result is None
+    assert result.tool == "calculator"
+    assert result.attempts == 0
+    assert result.execution_time >= 0
     assert tool.received_arguments is None
+
 
 def test_execute_times_out_slow_tool():
     tool = FakeTool(
@@ -184,7 +201,11 @@ def test_execute_times_out_slow_tool():
     assert result.error == (
         "Tool execution timed out after 0.05 seconds."
     )
+    assert result.tool == "calculator"
+    assert result.attempts == 1
+    assert result.execution_time >= 0.05
     assert elapsed < 0.15
+
 
 def test_execute_completes_before_timeout():
     tool = FakeTool(
@@ -207,6 +228,10 @@ def test_execute_completes_before_timeout():
     assert result.success is True
     assert result.result == 42
     assert result.error is None
+    assert result.tool == "calculator"
+    assert result.attempts == 1
+    assert result.execution_time >= 0.01
+
 
 def test_execute_retries_retryable_tool_error():
     tool = FakeTool(
@@ -218,6 +243,7 @@ def test_execute_retries_retryable_tool_error():
         FakeRegistry(tool),
         timeout=0.1,
         max_retries=1,
+        retry_base_delay=0,
     )
 
     tool_call = ToolCall(
@@ -229,6 +255,9 @@ def test_execute_retries_retryable_tool_error():
 
     assert result.success is True
     assert result.result == 42
+    assert result.tool == "calculator"
+    assert result.attempts == 2
+    assert result.execution_time > 0
     assert tool.call_count == 2
 
 
@@ -242,6 +271,7 @@ def test_execute_returns_failure_after_retries_exhausted():
         FakeRegistry(tool),
         timeout=0.1,
         max_retries=2,
+        retry_base_delay=0,
     )
 
     tool_call = ToolCall(
@@ -254,7 +284,11 @@ def test_execute_returns_failure_after_retries_exhausted():
     assert result.success is False
     assert result.result is None
     assert result.error == "temporary failure"
+    assert result.tool == "calculator"
+    assert result.attempts == 3
+    assert result.execution_time > 0
     assert tool.call_count == 3
+
 
 def test_execute_does_not_retry_non_retryable_error():
     tool = FakeTool(
@@ -265,6 +299,7 @@ def test_execute_does_not_retry_non_retryable_error():
         FakeRegistry(tool),
         timeout=0.1,
         max_retries=3,
+        retry_base_delay=0,
     )
 
     tool_call = ToolCall(
@@ -276,4 +311,7 @@ def test_execute_does_not_retry_non_retryable_error():
 
     assert result.success is False
     assert result.error == "division by zero"
+    assert result.tool == "calculator"
+    assert result.attempts == 1
+    assert result.execution_time > 0
     assert tool.call_count == 1
