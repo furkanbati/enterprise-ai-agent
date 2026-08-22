@@ -1,3 +1,4 @@
+import httpx
 import pytest
 from ollama import ResponseError
 
@@ -34,12 +35,13 @@ class FakeClient:
         return {"model": model}
 
 
-def create_generator(client):
+def create_generator(client, timeout=None):
     generator = Generator(
         host="http://fake",
         model="fake-model",
         max_retries=2,
         retry_base_delay=0,
+        timeout=timeout,
     )
 
     generator.client = client
@@ -195,8 +197,6 @@ def test_generate_retries_connection_error():
 
 
 def test_generate_retries_server_error():
-    from ollama import ResponseError
-
     error = ResponseError(
         "server error",
         status_code=500,
@@ -223,9 +223,31 @@ def test_generate_retries_server_error():
     assert len(client.calls) == 2
 
 
-def test_generate_does_not_retry_client_error():
-    from ollama import ResponseError
+def test_generate_retries_timeout():
+    client = FakeClient(
+        errors=[
+            httpx.ReadTimeout("request timed out"),
+        ],
+        responses=[
+            {
+                "message": {
+                    "content": "success after timeout",
+                }
+            }
+        ],
+    )
 
+    generator = create_generator(client, timeout=5.0)
+
+    result = generator.generate(
+        prompt="Hello",
+    )
+
+    assert result == "success after timeout"
+    assert len(client.calls) == 2
+
+
+def test_generate_does_not_retry_client_error():
     error = ResponseError(
         "model not found",
         status_code=404,
@@ -262,3 +284,256 @@ def test_generate_raises_after_max_retries():
         )
 
     assert len(client.calls) == 3
+
+
+def test_generate_raises_after_timeout_retries():
+    client = FakeClient(
+        errors=[
+            httpx.ReadTimeout("request timed out"),
+            httpx.ReadTimeout("request timed out"),
+            httpx.ReadTimeout("request timed out"),
+        ],
+    )
+
+    generator = create_generator(client, timeout=5.0)
+
+    with pytest.raises(httpx.ReadTimeout):
+        generator.generate(
+            prompt="Hello",
+        )
+
+    assert len(client.calls) == 3
+
+
+def test_generate_rejects_non_dict_response():
+    client = FakeClient(
+        responses=[
+            None,
+        ]
+    )
+
+    generator = create_generator(client)
+
+    with pytest.raises(
+        ValueError,
+        match="Generator returned an invalid response",
+    ):
+        generator.generate(
+            prompt="Hello",
+        )
+
+    assert len(client.calls) == 1
+
+
+def test_generate_rejects_missing_message():
+    client = FakeClient(
+        responses=[
+            {},
+        ]
+    )
+
+    generator = create_generator(client)
+
+    with pytest.raises(
+        ValueError,
+        match="Generator response is missing message",
+    ):
+        generator.generate(
+            prompt="Hello",
+        )
+
+    assert len(client.calls) == 1
+
+
+def test_generate_rejects_non_dict_message():
+    client = FakeClient(
+        responses=[
+            {
+                "message": None,
+            }
+        ]
+    )
+
+    generator = create_generator(client)
+
+    with pytest.raises(
+        ValueError,
+        match="Generator response is missing message",
+    ):
+        generator.generate(
+            prompt="Hello",
+        )
+
+    assert len(client.calls) == 1
+
+
+def test_generate_rejects_missing_content():
+    client = FakeClient(
+        responses=[
+            {
+                "message": {},
+            }
+        ]
+    )
+
+    generator = create_generator(client)
+
+    with pytest.raises(
+        ValueError,
+        match="Generator response is missing content",
+    ):
+        generator.generate(
+            prompt="Hello",
+        )
+
+    assert len(client.calls) == 1
+
+
+def test_generate_rejects_non_string_content():
+    client = FakeClient(
+        responses=[
+            {
+                "message": {
+                    "content": None,
+                }
+            }
+        ]
+    )
+
+    generator = create_generator(client)
+
+    with pytest.raises(
+        ValueError,
+        match="Generator response is missing content",
+    ):
+        generator.generate(
+            prompt="Hello",
+        )
+
+    assert len(client.calls) == 1
+
+
+@pytest.mark.parametrize(
+    "content",
+    [
+        "",
+        "   ",
+        "\n",
+        "\t",
+        " \n\t ",
+    ],
+)
+def test_generate_rejects_empty_response(content):
+    client = FakeClient(
+        responses=[
+            {
+                "message": {
+                    "content": content,
+                }
+            }
+        ]
+    )
+
+    generator = create_generator(client)
+
+    with pytest.raises(
+        ValueError,
+        match="Generator returned an empty response",
+    ):
+        generator.generate(
+            prompt="Hello",
+        )
+
+    assert len(client.calls) == 1
+
+
+def test_generate_logs_success_with_attempt_count_and_duration(
+    caplog,
+):
+    client = FakeClient(
+        responses=[
+            {
+                "message": {
+                    "content": "answer",
+                }
+            }
+        ]
+    )
+
+    generator = create_generator(client)
+
+    with caplog.at_level("INFO"):
+        result = generator.generate(
+            prompt="Hello",
+        )
+
+    assert result == "answer"
+
+    assert (
+        "Generation completed successfully"
+        in caplog.text
+    )
+
+    assert "after 1 attempt(s)" in caplog.text
+    assert "s" in caplog.text
+
+
+def test_generate_logs_retry_attempt(caplog):
+    client = FakeClient(
+        errors=[
+            ConnectionError("connection failed"),
+        ],
+        responses=[
+            {
+                "message": {
+                    "content": "success",
+                }
+            }
+        ],
+    )
+
+    generator = create_generator(client)
+
+    with caplog.at_level("WARNING"):
+        result = generator.generate(
+            prompt="Hello",
+        )
+
+    assert result == "success"
+
+    assert (
+        "Generator connection failed on attempt 1/3"
+        in caplog.text
+    )
+
+    assert (
+        "Retrying generator"
+        in caplog.text
+    )
+
+    assert "next attempt 2/3" in caplog.text
+
+
+def test_generate_logs_failure_after_retries(caplog):
+    client = FakeClient(
+        errors=[
+            ConnectionError("connection failed"),
+            ConnectionError("connection failed"),
+            ConnectionError("connection failed"),
+        ],
+    )
+
+    generator = create_generator(client)
+
+    with caplog.at_level("ERROR"):
+        with pytest.raises(ConnectionError):
+            generator.generate(
+                prompt="Hello",
+            )
+
+    assert (
+        "Generator connection failed after 3 attempts"
+        in caplog.text
+    )
+
+    assert "in " in caplog.text
