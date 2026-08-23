@@ -42,5 +42,13 @@ if TOOL_TIMEOUT < 0:
 
 if RETRY_BASE_DELAY < 0:
     raise ValueError("RETRY_BASE_DELAY must be zero or greater.")
+if not OLLAMA_HOST.strip():
+    raise ValueError(
+        "OLLAMA_HOST cannot be empty."
+    )
 
+if not CHAT_MODEL.strip():
+    raise ValueError(
+        "CHAT_MODEL cannot be empty."
+    )
 

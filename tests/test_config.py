@@ -28,3 +28,25 @@ def test_rejects_negative_retry_settings(name, value):
 
     assert result.returncode != 0
     assert f"{name} must be zero or greater." in result.stderr
+
+
+@pytest.mark.parametrize(
+    "name",
+    [
+        "OLLAMA_HOST",
+        "CHAT_MODEL",
+    ],
+)
+def test_rejects_empty_string_settings(name):
+    environment = os.environ | {name: ""}
+
+    result = subprocess.run(
+        [sys.executable, "-c", "import app.config"],
+        env=environment,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert result.returncode != 0
+    assert f"{name} cannot be empty." in result.stderr
