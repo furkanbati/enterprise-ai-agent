@@ -1,5 +1,6 @@
 import logging
 
+import httpx
 from fastapi import FastAPI, HTTPException
 from ollama import ResponseError
 from pydantic import BaseModel, Field, field_validator
@@ -54,6 +55,7 @@ registry = ToolRegistry(
 generator = Generator()
 planner = Planner(generator, registry)
 executor = Executor(registry)
+
 pipeline = Pipeline(
     planner=planner,
     executor=executor,
@@ -82,12 +84,21 @@ def ready():
 def chat(request: ChatRequest):
     try:
         result: AgentResult = pipeline.run(request.question)
+
     except ConnectionError as exc:
         logger.exception("AI service connection failed")
         raise HTTPException(
             status_code=503,
             detail="The AI service is temporarily unavailable.",
         ) from exc
+
+    except httpx.TimeoutException as exc:
+        logger.exception("AI service request timed out")
+        raise HTTPException(
+            status_code=503,
+            detail="The AI service is temporarily unavailable.",
+        ) from exc
+
     except (ResponseError, ValueError) as exc:
         logger.exception("AI service returned an invalid response")
         raise HTTPException(
