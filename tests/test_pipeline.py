@@ -1,5 +1,7 @@
 from app.models import AgentResult, ToolCall, ToolResult
 from app.pipeline import Pipeline
+from app.config import PIPELINE_MAX_REPLANS
+import pytest
 
 class FakePlanner:
     def __init__(self, tool_call=None):
@@ -74,6 +76,16 @@ class SequencedExecutor:
         self.received_tool_calls.append(tool_call)
         return self.results.pop(0)
 
+class FailingGenerator:
+    def generate(
+        self,
+        prompt,
+        system_prompt=None,
+        json_mode=False,
+    ):
+        raise RuntimeError(
+            "generation failed"
+        )
 
 def test_pipeline_without_tool():
     planner = FakePlanner(tool_call=None)
@@ -244,3 +256,210 @@ def test_pipeline_returns_failure_when_replanning_declines_tool():
     assert result.error == "division by zero"
     assert executor.received_tool_calls == [failed_tool_call]
     assert len(planner.calls) == 2
+
+
+def test_pipeline_stops_after_max_replans():
+    initial_tool_call = ToolCall(
+        tool="calculator",
+        arguments={"expression": "1 / 0"},
+    )
+
+    replans = [
+        ToolCall(
+            tool="calculator",
+            arguments={"expression": f"1 / {i}"},
+        )
+        for i in range(1, PIPELINE_MAX_REPLANS + 1)
+    ]
+
+    planner = SequencedPlanner(
+        [initial_tool_call, *replans]
+    )
+
+    executor = SequencedExecutor(
+        [
+            ToolResult(
+                success=False,
+                error=f"failure-{i}",
+            )
+            for i in range(
+                PIPELINE_MAX_REPLANS + 1
+            )
+        ]
+    )
+
+    generator = FakeGenerator(
+        answer="Could not complete request."
+    )
+
+    pipeline = Pipeline(
+        planner=planner,
+        executor=executor,
+        generator=generator,
+    )
+
+    result = pipeline.run("calculate")
+
+    assert result.answer == "Could not complete request."
+    assert result.tool_result is None
+    assert result.error == (
+        f"failure-{PIPELINE_MAX_REPLANS}"
+    )
+
+    assert len(executor.received_tool_calls) == (
+        PIPELINE_MAX_REPLANS + 1
+    )
+
+    assert len(planner.calls) == (
+        PIPELINE_MAX_REPLANS + 1
+    )
+
+
+
+
+class FailingPlanner:
+    def plan(self, *args, **kwargs):
+        raise ValueError("invalid planner output")
+
+
+def test_pipeline_propagates_initial_planner_failure():
+    pipeline = Pipeline(
+        planner=FailingPlanner(),
+        executor=FakeExecutor(
+            ToolResult(success=True, result=1)
+        ),
+        generator=FakeGenerator(),
+    )
+
+    with pytest.raises(
+        ValueError,
+        match="invalid planner output",
+    ):
+        pipeline.run("hello")
+
+class ReplanFailingPlanner:
+    def __init__(self):
+        self.calls = 0
+
+    def plan(
+        self,
+        question,
+        previous_tool=None,
+        previous_error=None,
+    ):
+        self.calls += 1
+
+        if self.calls == 1:
+            return ToolCall(
+                tool="calculator",
+                arguments={
+                    "expression": "10 / 0",
+                },
+            )
+
+        raise ValueError(
+            "replanning failed"
+        )
+
+
+def test_pipeline_propagates_replan_failure():
+    planner = ReplanFailingPlanner()
+
+    executor = FakeExecutor(
+        ToolResult(
+            success=False,
+            error="division by zero",
+        )
+    )
+
+    pipeline = Pipeline(
+        planner=planner,
+        executor=executor,
+        generator=FakeGenerator(),
+    )
+
+    with pytest.raises(
+        ValueError,
+        match="replanning failed",
+    ):
+        pipeline.run("10 / 0")
+
+
+
+def test_pipeline_propagates_generator_failure_without_tool():
+    planner = FakePlanner(
+        tool_call=None,
+    )
+
+    pipeline = Pipeline(
+        planner=planner,
+        executor=FakeExecutor(
+            ToolResult(success=True, result=1)
+        ),
+        generator=FailingGenerator(),
+    )
+
+    with pytest.raises(
+        RuntimeError,
+        match="generation failed",
+    ):
+        pipeline.run("hello")
+
+def test_pipeline_propagates_generator_failure_after_tool_success():
+    planner = FakePlanner(
+        tool_call=ToolCall(
+            tool="calculator",
+            arguments={
+                "expression": "2 + 2",
+            },
+        )
+    )
+
+    executor = FakeExecutor(
+        ToolResult(
+            success=True,
+            result=4,
+        )
+    )
+
+    pipeline = Pipeline(
+        planner=planner,
+        executor=executor,
+        generator=FailingGenerator(),
+    )
+
+    with pytest.raises(
+        RuntimeError,
+        match="generation failed",
+    ):
+        pipeline.run("2 + 2")
+
+def test_pipeline_propagates_generator_failure_after_tool_failure():
+    planner = FakePlanner(
+        tool_call=ToolCall(
+            tool="calculator",
+            arguments={
+                "expression": "1 / 0",
+            },
+        )
+    )
+
+    executor = FakeExecutor(
+        ToolResult(
+            success=False,
+            error="division by zero",
+        )
+    )
+
+    pipeline = Pipeline(
+        planner=planner,
+        executor=executor,
+        generator=FailingGenerator(),
+    )
+
+    with pytest.raises(
+        RuntimeError,
+        match="generation failed",
+    ):
+        pipeline.run("1 / 0")
+
