@@ -10,11 +10,13 @@ class FakeTool:
         result=42,
         error=None,
         delay=0,
+        delay_times=None,
         fail_times=0,
     ):
         self.result = result
         self.error = error
         self.delay = delay
+        self.delay_times = delay_times
         self.fail_times = fail_times
         self.call_count = 0
         self.received_arguments = None
@@ -34,8 +36,13 @@ class FakeTool:
         self.call_count += 1
         self.received_arguments = arguments
 
-        if self.delay:
-            time.sleep(self.delay)
+        if self.delay_times is not None:
+            delay = self.delay_times[self.call_count - 1]
+        else:
+            delay = self.delay
+
+        if delay:
+            time.sleep(delay)
 
         if self.call_count <= self.fail_times:
             raise ConnectionError("temporary failure")
@@ -205,6 +212,34 @@ def test_execute_times_out_slow_tool():
     assert result.attempts == 1
     assert result.execution_time >= 0.05
     assert elapsed < 0.15
+
+
+def test_execute_retries_after_timeout():
+    tool = FakeTool(
+        result=42,
+        delay_times=[0.05, 0],
+    )
+
+    executor = Executor(
+        FakeRegistry(tool),
+        timeout=0.01,
+        max_retries=1,
+        retry_base_delay=0,
+    )
+
+    tool_call = ToolCall(
+        tool="calculator",
+        arguments={"expression": "6 * 7"},
+    )
+
+    result = executor.execute(tool_call)
+
+    assert result.success is True
+    assert result.result == 42
+    assert result.error is None
+    assert result.tool == "calculator"
+    assert result.attempts == 2
+    assert tool.call_count == 2
 
 
 def test_execute_completes_before_timeout():

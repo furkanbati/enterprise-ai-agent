@@ -23,6 +23,7 @@ class CalculatorTool(Tool):
                 "expression": {
                     "type": "string",
                     "description": "Mathematical expression to evaluate.",
+                    "maxLength": 200,
                 }
             },
             "required": ["expression"],

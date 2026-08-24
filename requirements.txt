@@ -5,4 +5,5 @@ pydantic
 python-dotenv
 simpleeval
 pytest
+pytest-cov
 jsonschema

@@ -266,6 +266,34 @@ def test_generate_does_not_retry_client_error():
 
     assert len(client.calls) == 1
 
+def test_generate_raises_after_server_error_retries():
+    errors = [
+        ResponseError(
+            "server error",
+            status_code=500,
+        ),
+        ResponseError(
+            "server error",
+            status_code=500,
+        ),
+        ResponseError(
+            "server error",
+            status_code=500,
+        ),
+    ]
+
+    client = FakeClient(
+        errors=errors,
+    )
+
+    generator = create_generator(client)
+
+    with pytest.raises(ResponseError):
+        generator.generate(
+            prompt="Hello",
+        )
+
+    assert len(client.calls) == 3
 
 def test_generate_raises_after_max_retries():
     client = FakeClient(

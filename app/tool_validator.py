@@ -19,6 +19,7 @@ class ToolArgumentValidator:
                 do not satisfy the schema.
         """
         try:
+            Draft202012Validator.check_schema(schema)
             validator = Draft202012Validator(schema)
         except SchemaError as exc:
             raise ValueError(f"Invalid tool schema: {exc.message}") from exc
