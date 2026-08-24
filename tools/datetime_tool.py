@@ -20,6 +20,7 @@ class DateTimeTool(Tool):
             "type": "object",
             "properties": {},
             "required": [],
+            "additionalProperties": False,
         }
 
     def execute(self, arguments: dict[str, Any]) -> str:

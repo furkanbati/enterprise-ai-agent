@@ -26,6 +26,7 @@ class CalculatorTool(Tool):
                 }
             },
             "required": ["expression"],
+            "additionalProperties": False,
         }
 
     def execute(self, arguments: dict[str, Any]) -> Any:
