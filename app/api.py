@@ -1,8 +1,10 @@
+
 import logging
 import time
 
 import httpx
 from fastapi import FastAPI, HTTPException, Request
+from fastapi.responses import JSONResponse
 from ollama import ResponseError
 from prometheus_client import Counter, Histogram, make_asgi_app
 from pydantic import BaseModel, Field, field_validator
@@ -84,6 +86,31 @@ pipeline = Pipeline(
     executor=executor,
     generator=generator,
 )
+
+
+@app.exception_handler(Exception)
+async def unexpected_exception_handler(
+    request: Request,
+    exc: Exception,
+):
+    request_id = get_request_id()
+
+    logger.exception(
+        "Unhandled exception on %s %s",
+        request.method,
+        request.url.path,
+    )
+
+    return JSONResponse(
+        status_code=500,
+        content={
+            "detail": "An unexpected error occurred.",
+            "request_id": request_id,
+        },
+        headers={
+            "X-Request-ID": request_id,
+        },
+    )
 
 
 @app.middleware("http")
@@ -177,3 +204,4 @@ app.mount(
     "/metrics",
     make_asgi_app(),
 )
+
