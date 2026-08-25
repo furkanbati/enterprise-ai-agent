@@ -1,52 +1,173 @@
 # Enterprise AI Agent
 
-A simple AI agent project built with FastAPI, Ollama, and tools.
+## Overview
 
-The application first evaluates a user's question with the Planner. When a
-tool is needed, it runs the appropriate tool and uses the LLM to turn the
-result into a clear answer for the user.
+Enterprise AI Agent is a production-oriented AI agent built with FastAPI, Ollama, and tool execution capabilities.
+
+The agent evaluates each user request, determines whether a tool is required, executes the tool when necessary, and uses a language model to generate the final response. The architecture separates planning, execution, and generation responsibilities to improve reliability, maintainability, and testability.
+
+The project focuses on building a simple but robust agent architecture with:
+
+* Tool-aware planning
+* Tool execution and recovery
+* Structured validation
+* Retry and timeout protection
+* Health and readiness monitoring
+* Production-ready Docker runtime
+
+---
+
+## Architecture
+
+```text
+User
+ ↓
+FastAPI
+ ↓
+Pipeline
+ ↓
+Planner
+ ↓
+Tool Required?
+ ├── No → Generator → Answer
+ │
+ └── Yes
+       ↓
+    Executor
+       ↓
+    Success?
+     ├── Yes → Generator → Answer
+     │
+     └── No → Replan → Executor
+```
+
+### Components
+
+#### API
+
+* Receives HTTP requests
+* Validates request payloads
+* Exposes health and readiness endpoints
+
+#### Pipeline
+
+* Orchestrates the complete agent workflow
+* Coordinates planning, execution, and generation
+* Handles recovery and replanning
+
+#### Planner
+
+* Determines whether a tool is required
+* Selects the appropriate tool
+* Produces validated tool arguments
+
+#### Executor
+
+* Executes tools
+* Applies retries and timeouts
+* Isolates execution failures
+
+#### Generator
+
+* Interacts with Ollama
+* Generates user-facing responses
+* Applies retry and backoff policies
+
+#### Tool Registry
+
+* Maintains available tools
+* Provides tool discovery for planning and execution
+
+---
 
 ## Features
 
-- FastAPI-based `/chat` API
-- Local LLM support through Ollama
-- Calculator and DateTime tools
-- JSON Schema validation for tool arguments
-- Recovery attempt when a tool fails
-- Retry and backoff for Ollama calls
-- Request validation
-- API, Ollama, and model readiness checks
-- Test suite
+### Agent Capabilities
+
+* Tool-aware planning
+* Structured tool calls
+* Tool execution
+* Automatic replanning after failures
+* JSON Schema tool argument validation
+
+### Reliability
+
+* LLM retry and backoff
+* Tool retry support
+* Tool execution timeout protection
+* Exception isolation
+* Recovery and replanning flow
+
+### Production Readiness
+
+* Health endpoint
+* Readiness endpoint
+* Configuration validation
+* Docker healthchecks
+* Non-root container execution
+* Automatic restart policy
+* Production dependency separation
+
+### Security
+
+* Request validation
+* Tool argument validation
+* Controlled tool execution
+* Safe error handling
+
+### Testing
+
+* Unit tests
+* API tests
+* Configuration tests
+* Planner tests
+* Generator tests
+* Executor tests
+* Pipeline tests
+* Tool validation tests
+
+---
 
 ## Requirements
 
-- Docker Desktop
-- Docker Compose
+* Docker Desktop
+* Docker Compose
 
-## Start the application
+---
 
-Build and start the containers in the background:
+## Quick Start
+
+Build and start the containers:
 
 ```powershell
 docker compose up -d --build
 ```
 
-The default model is `llama3`. On the first setup, download it into the
-Ollama container:
+Download the model inside the Ollama container:
 
 ```powershell
 docker compose exec ollama ollama pull llama3
 ```
 
-The application runs at:
+Verify that the containers are running:
+
+```powershell
+docker compose ps
+```
+
+The API will be available at:
 
 ```text
 http://localhost:8000
 ```
 
-## Health endpoints
+---
 
-### Is the API running?
+## Health and Readiness
+
+### Health Endpoint
+
+Checks whether the API process is running.
 
 ```powershell
 curl.exe -i http://localhost:8000/health
@@ -60,15 +181,18 @@ Expected response:
 }
 ```
 
-This endpoint only confirms that the API is running.
+### Readiness Endpoint
 
-### Are Ollama and the configured model ready?
+Checks whether:
+
+* Ollama is reachable
+* The configured model is available
 
 ```powershell
 curl.exe -i http://localhost:8000/ready
 ```
 
-When the model is ready:
+Expected response:
 
 ```json
 {
@@ -76,12 +200,17 @@ When the model is ready:
 }
 ```
 
-If Ollama is unavailable or the configured model has not been downloaded,
-the endpoint returns `503 Service Unavailable`.
+If Ollama is unavailable or the configured model has not been downloaded, the endpoint returns:
 
-## Chat endpoint
+```text
+503 Service Unavailable
+```
 
-Send a question with:
+---
+
+## Chat API
+
+Send a request:
 
 ```powershell
 curl.exe -X POST http://localhost:8000/chat `
@@ -103,18 +232,29 @@ Example response:
 }
 ```
 
+### Request Validation
+
 The `question` field:
 
-- Cannot be blank or contain only whitespace.
-- Can contain at most 4,000 characters.
+* Cannot be blank
+* Cannot contain only whitespace
+* Maximum length: 4000 characters
 
-Invalid requests are rejected with `422 Unprocessable Entity`.
+Invalid requests return:
 
-## Tools
+```text
+422 Unprocessable Entity
+```
+
+---
+
+## Available Tools
 
 ### Calculator
 
 Evaluates mathematical expressions.
+
+Example tool call:
 
 ```json
 {
@@ -129,6 +269,8 @@ Evaluates mathematical expressions.
 
 Returns the current UTC date and time.
 
+Example tool call:
+
 ```json
 {
   "tool": "datetime",
@@ -136,80 +278,140 @@ Returns the current UTC date and time.
 }
 ```
 
-## Retry behavior
+---
 
-The project has two separate retry settings:
+## Configuration
 
-| Setting | Default | Description |
-| --- | ---: | --- |
-| `MAX_RETRIES` | `3` | Number of retries for technical Ollama/LLM failures |
-| `RETRY_BASE_DELAY` | `1.0` | Initial delay between LLM retries, in seconds |
-| `TOOL_MAX_RETRIES` | `1` | Number of correction attempts after a tool failure |
+The application is configured through environment variables.
 
-With `TOOL_MAX_RETRIES: 1`, the flow is:
+| Variable              | Default                | Description                       |
+| --------------------- | ---------------------- | --------------------------------- |
+| OLLAMA_HOST           | http://localhost:11434 | Ollama server URL                 |
+| CHAT_MODEL            | llama3                 | Model used for generation         |
+| GENERATOR_MAX_RETRIES | 3                      | Maximum LLM retry attempts        |
+| EXECUTOR_MAX_RETRIES  | 2                      | Maximum tool retry attempts       |
+| PIPELINE_MAX_REPLANS  | 2                      | Maximum replanning attempts       |
+| RETRY_BASE_DELAY      | 1.0                    | Initial retry delay in seconds    |
+| TOOL_TIMEOUT          | 5.0                    | Tool execution timeout in seconds |
 
-1. The tool runs once.
-2. If it fails, the Planner receives the error and tries to produce a corrected tool call.
-3. The corrected tool call runs at most one more time.
-
-To use a different value with Docker Compose, add it to the `agent-api`
-`environment` section in `docker-compose.yml`:
+Example:
 
 ```yaml
-TOOL_MAX_RETRIES: 2
+environment:
+  CHAT_MODEL: llama3
+  GENERATOR_MAX_RETRIES: 5
+  EXECUTOR_MAX_RETRIES: 3
+  PIPELINE_MAX_REPLANS: 2
 ```
 
-Then rebuild the API container:
+After changing configuration:
 
 ```powershell
-docker compose up -d --build agent-api
+docker compose up -d --build
 ```
 
-## Tests
+---
 
-Run the full test suite inside the running API container:
+## Production Runtime
 
-```powershell
-docker compose exec agent-api python -m pytest -q
-```
+The Docker runtime includes several production-oriented safeguards.
 
-For detailed output:
+### Container Security
 
-```powershell
-docker compose exec agent-api python -m pytest -v
-```
+* API container runs as a non-root user
+* Minimal Python base image
+* Isolated application user
 
-## Project structure
+### Health Monitoring
+
+* API container healthcheck
+* Ollama container healthcheck
+* Readiness endpoint
+* Service dependency health validation
+
+### Reliability
+
+* Automatic container restart policy
+* Retry and backoff support
+* Tool execution timeout protection
+* Recovery and replanning flow
+
+### Dependency Management
+
+* Production dependencies separated from development dependencies
+* Test packages excluded from production images
+* Smaller production runtime footprint
+
+---
+
+## Testing
+
+The project includes tests for:
+
+* API endpoints
+* Configuration validation
+* Models
+* Planner
+* Generator
+* Executor
+* Pipeline
+* Tool Registry
+* Tool Validator
+* Individual tools
+
+Production Docker images intentionally exclude test dependencies such as `pytest` and `pytest-cov`.
+
+Tests should be executed in a development environment.
+
+---
+
+## Project Structure
 
 ```text
 app/
-  api.py           FastAPI endpoints
-  config.py        Environment variables and settings
-  generator.py     Ollama and LLM calls
-  planner.py       Tool selection and argument validation
-  executor.py      Tool execution
-  pipeline.py      Planning, tool execution, and recovery flow
-  tool_registry.py Tool registration
+  api.py              FastAPI endpoints
+  config.py           Configuration and validation
+  executor.py         Tool execution logic
+  generator.py        Ollama integration
+  models.py           Shared models
+  pipeline.py         Agent orchestration
+  planner.py          Tool planning
+  tool_registry.py    Tool registration
+  tool_validator.py   Tool argument validation
 
 tools/
-  base.py          Tool interface
-  calculator.py    Calculator tool
-  datetime_tool.py Date and time tool
+  base.py             Tool interface
+  calculator.py       Calculator tool
+  datetime_tool.py    Date and time tool
 
 tests/
-  ...              Unit and API tests
+  test_api.py
+  test_calculator.py
+  test_config.py
+  test_datetime_tool.py
+  test_executor.py
+  test_generator.py
+  test_models.py
+  test_pipeline.py
+  test_planner.py
+  test_tool_registry.py
+  test_tool_validator.py
 ```
 
-## Stop the application
+---
+
+## Stop the Application
+
+Stop all containers:
 
 ```powershell
 docker compose down
 ```
 
-To remove the Ollama volume and its downloaded models as well:
+Remove containers and Ollama models:
 
 ```powershell
 docker compose down -v
 ```
 
-This command removes the downloaded Ollama models.
+This also removes downloaded Ollama models stored in the Docker volume.
