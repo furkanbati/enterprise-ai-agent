@@ -3,6 +3,7 @@ import time
 
 import httpx
 from ollama import Client, ResponseError
+from prometheus_client import Counter
 
 from app.config import (
     CHAT_MODEL,
@@ -11,7 +12,14 @@ from app.config import (
     RETRY_BASE_DELAY,
 )
 
+
 logger = logging.getLogger(__name__)
+
+
+GENERATION_TOTAL = Counter(
+    "agent_generation_total",
+    "Total number of generation calls.",
+)
 
 
 class Generator:
@@ -53,6 +61,8 @@ class Generator:
         system_prompt: str | None = None,
         json_mode: bool = False,
     ) -> str:
+        GENERATION_TOTAL.inc()
+
         start_time = time.perf_counter()
         total_attempts = self.max_retries + 1
 
@@ -195,19 +205,14 @@ class Generator:
         raise RuntimeError("Generator failed unexpectedly.")
 
     def _validate_response(self, response) -> str:
-        if not isinstance(response, dict):
-            raise ValueError(
-                "Generator returned an invalid response."
-            )
+        message = getattr(response, "message", None)
 
-        message = response.get("message")
-
-        if not isinstance(message, dict):
+        if message is None:
             raise ValueError(
                 "Generator response is missing message."
             )
 
-        content = message.get("content")
+        content = getattr(message, "content", None)
 
         if not isinstance(content, str):
             raise ValueError(

@@ -1,12 +1,20 @@
 import logging
+import time
 
 import httpx
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
 from ollama import ResponseError
+from prometheus_client import Counter, Histogram, make_asgi_app
 from pydantic import BaseModel, Field, field_validator
 
 from app.executor import Executor
 from app.generator import Generator
+from app.logging import (
+    configure_logging,
+    generate_request_id,
+    reset_request_id,
+    set_request_id,
+)
 from app.models import AgentResult
 from app.pipeline import Pipeline
 from app.planner import Planner
@@ -15,12 +23,27 @@ from tools.calculator import CalculatorTool
 from tools.datetime_tool import DateTimeTool
 
 
+configure_logging()
+
 app = FastAPI(
     title="Enterprise AI Agent",
     version="0.1.0",
 )
 
 logger = logging.getLogger(__name__)
+
+
+HTTP_REQUESTS_TOTAL = Counter(
+    "agent_http_requests_total",
+    "Total number of HTTP requests.",
+    ["method", "path", "status"],
+)
+
+HTTP_REQUEST_DURATION = Histogram(
+    "agent_http_request_duration_seconds",
+    "HTTP request duration in seconds.",
+    ["method", "path"],
+)
 
 
 class ChatRequest(BaseModel):
@@ -61,6 +84,41 @@ pipeline = Pipeline(
     executor=executor,
     generator=generator,
 )
+
+
+@app.middleware("http")
+async def request_id_middleware(
+    request: Request,
+    call_next,
+):
+    request_id = generate_request_id()
+    token = set_request_id(request_id)
+
+    start_time = time.perf_counter()
+
+    try:
+        response = await call_next(request)
+
+        if request.url.path != "/metrics":
+            duration = time.perf_counter() - start_time
+
+            HTTP_REQUESTS_TOTAL.labels(
+                method=request.method,
+                path=request.url.path,
+                status=str(response.status_code),
+            ).inc()
+
+            HTTP_REQUEST_DURATION.labels(
+                method=request.method,
+                path=request.url.path,
+            ).observe(duration)
+
+        response.headers["X-Request-ID"] = request_id
+
+        return response
+
+    finally:
+        reset_request_id(token)
 
 
 @app.get("/health")
@@ -113,3 +171,9 @@ def chat(request: ChatRequest):
         tool_result=result.tool_result,
         error=result.error,
     )
+
+
+app.mount(
+    "/metrics",
+    make_asgi_app(),
+)

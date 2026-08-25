@@ -1,12 +1,33 @@
+import logging
 import time
 from concurrent.futures import ThreadPoolExecutor, TimeoutError
-import logging
 
-logger = logging.getLogger(__name__)
-from app.config import RETRY_BASE_DELAY, EXECUTOR_MAX_RETRIES, TOOL_TIMEOUT
+from prometheus_client import Counter
+
+from app.config import (
+    EXECUTOR_MAX_RETRIES,
+    RETRY_BASE_DELAY,
+    TOOL_TIMEOUT,
+)
 from app.models import ToolCall, ToolResult
 from app.tool_registry import ToolRegistry
 from app.tool_validator import ToolArgumentValidator
+
+
+logger = logging.getLogger(__name__)
+
+
+TOOL_CALLS_TOTAL = Counter(
+    "agent_tool_calls_total",
+    "Total number of tool execution calls.",
+    ["tool"],
+)
+
+TOOL_FAILURES_TOTAL = Counter(
+    "agent_tool_failures_total",
+    "Total number of failed tool executions.",
+    ["tool"],
+)
 
 
 class Executor:
@@ -31,6 +52,10 @@ class Executor:
     def execute(self, tool_call: ToolCall) -> ToolResult:
         start_time = time.perf_counter()
 
+        TOOL_CALLS_TOTAL.labels(
+            tool=tool_call.tool,
+        ).inc()
+
         logger.info(
             "Executing tool '%s'",
             tool_call.tool,
@@ -44,6 +69,10 @@ class Executor:
                 "Unknown tool requested: '%s'",
                 tool_call.tool,
             )
+
+            TOOL_FAILURES_TOTAL.labels(
+                tool=tool_call.tool,
+            ).inc()
 
             duration = (
                 time.perf_counter() - start_time
@@ -68,6 +97,10 @@ class Executor:
                 tool_call.tool,
                 exc,
             )
+
+            TOOL_FAILURES_TOTAL.labels(
+                tool=tool_call.tool,
+            ).inc()
 
             duration = (
                 time.perf_counter() - start_time
@@ -132,6 +165,10 @@ class Executor:
                         attempt + 1,
                     )
 
+                    TOOL_FAILURES_TOTAL.labels(
+                        tool=tool_call.tool,
+                    ).inc()
+
                     return ToolResult(
                         success=False,
                         tool=tool_call.tool,
@@ -171,6 +208,10 @@ class Executor:
                         attempt + 1,
                     )
 
+                    TOOL_FAILURES_TOTAL.labels(
+                        tool=tool_call.tool,
+                    ).inc()
+
                     return ToolResult(
                         success=False,
                         tool=tool_call.tool,
@@ -199,6 +240,10 @@ class Executor:
                     tool_call.tool,
                 )
 
+                TOOL_FAILURES_TOTAL.labels(
+                    tool=tool_call.tool,
+                ).inc()
+
                 return ToolResult(
                     success=False,
                     tool=tool_call.tool,
@@ -218,6 +263,10 @@ class Executor:
             "Tool '%s' failed unexpectedly",
             tool_call.tool,
         )
+
+        TOOL_FAILURES_TOTAL.labels(
+            tool=tool_call.tool,
+        ).inc()
 
         return ToolResult(
             success=False,

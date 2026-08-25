@@ -1,12 +1,21 @@
 import logging
 
+from prometheus_client import Counter
+
 from app.config import PIPELINE_MAX_REPLANS
 from app.executor import Executor
 from app.generator import Generator
 from app.models import AgentResult
 from app.planner import Planner
 
+
 logger = logging.getLogger(__name__)
+
+
+REPLANS_TOTAL = Counter(
+    "agent_replans_total",
+    "Total number of pipeline replanning attempts.",
+)
 
 
 class Pipeline:
@@ -81,6 +90,8 @@ class Pipeline:
                 attempt + 1,
                 PIPELINE_MAX_REPLANS,
             )
+
+            REPLANS_TOTAL.inc()
 
             corrected_tool_call = self.planner.plan(
                 question=question,
