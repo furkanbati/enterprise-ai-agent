@@ -5,6 +5,16 @@ from ollama import ResponseError
 from app.generator import Generator
 
 
+class FakeMessage:
+    def __init__(self, content):
+        self.content = content
+
+
+class FakeResponse:
+    def __init__(self, content):
+        self.message = FakeMessage(content)
+
+
 class FakeClient:
     def __init__(self, responses=None, errors=None, show_error=None):
         self.responses = responses or []
@@ -57,6 +67,22 @@ def test_generate_returns_response_content():
                     "content": "Hello!",
                 }
             }
+        ]
+    )
+
+    generator = create_generator(client)
+
+    result = generator.generate(
+        prompt="Say hello",
+    )
+
+    assert result == "Hello!"
+
+
+def test_generate_accepts_response_object():
+    client = FakeClient(
+        responses=[
+            FakeResponse("Hello!"),
         ]
     )
 
@@ -266,6 +292,7 @@ def test_generate_does_not_retry_client_error():
 
     assert len(client.calls) == 1
 
+
 def test_generate_raises_after_server_error_retries():
     errors = [
         ResponseError(
@@ -294,6 +321,7 @@ def test_generate_raises_after_server_error_retries():
         )
 
     assert len(client.calls) == 3
+
 
 def test_generate_raises_after_max_retries():
     client = FakeClient(
@@ -333,7 +361,7 @@ def test_generate_raises_after_timeout_retries():
     assert len(client.calls) == 3
 
 
-def test_generate_rejects_non_dict_response():
+def test_generate_rejects_response_without_message():
     client = FakeClient(
         responses=[
             None,
@@ -344,7 +372,7 @@ def test_generate_rejects_non_dict_response():
 
     with pytest.raises(
         ValueError,
-        match="Generator returned an invalid response",
+        match="Generator response is missing message",
     ):
         generator.generate(
             prompt="Hello",
