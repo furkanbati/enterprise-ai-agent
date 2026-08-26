@@ -204,7 +204,7 @@ class Generator:
 
         raise RuntimeError("Generator failed unexpectedly.")
 
-   def _validate_response(self, response) -> str:
+    def _validate_response(self, response) -> str:
         if isinstance(response, dict):
             message = response.get("message")
         else:
