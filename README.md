@@ -1,23 +1,22 @@
 # Enterprise AI Agent
 
-## Overview
+A production-oriented AI agent built with **FastAPI**, **Ollama**, and structured tool execution.
 
-Enterprise AI Agent is a production-oriented AI agent built with FastAPI, Ollama, and tool execution capabilities.
+The agent evaluates each user request, determines whether a tool is required, executes the selected tool, and uses an LLM to generate the final response. Planning, execution, and generation are separated to improve reliability, maintainability, and testability.
 
-The agent evaluates each user request, determines whether a tool is required, executes the tool when necessary, and uses a language model to generate the final response. The architecture separates planning, execution, and generation responsibilities to improve reliability, maintainability, and testability.
-
-The project focuses on building a simple but robust agent architecture with:
+The project focuses on a simple but robust agent architecture with:
 
 * Tool-aware planning
-* Tool execution and recovery
-* Structured validation
+* Structured tool execution
+* Automatic recovery and replanning
+* JSON Schema argument validation
 * Retry and timeout protection
 * Health and readiness monitoring
-* Production-ready Docker runtime
+* Production-oriented Docker runtime
 
 ---
 
-## Architecture
+# Architecture
 
 ```text
 User
@@ -41,48 +40,170 @@ Tool Required?
      └── No → Replan → Executor
 ```
 
-### Components
+The architecture separates three core responsibilities:
 
-#### API
+```text
+Planner
+   ↓
+Decide what to do
+
+Executor
+   ↓
+Run the selected tool safely
+
+Generator
+   ↓
+Produce the final response
+```
+
+This separation also makes individual components easier to test and replace.
+
+---
+
+# What This Project Demonstrates
+
+The project is designed as a focused implementation of an LLM agent runtime rather than a collection of unrelated features.
+
+It demonstrates how to build an agent that can:
+
+* Decide when tool usage is necessary
+* Select a registered tool
+* Validate tool arguments before execution
+* Execute tools with timeout and retry protection
+* Recover from tool failures
+* Replan when an execution attempt fails
+* Generate a final user-facing response from the tool result
+* Expose the entire workflow through a REST API
+
+---
+
+# Example Agent Flows
+
+## Direct LLM Response
+
+For a request that does not require a tool:
+
+```text
+User
+ ↓
+Planner
+ ↓
+No tool required
+ ↓
+Generator
+ ↓
+Answer
+```
+
+## Calculator Tool
+
+For a mathematical request:
+
+```text
+User
+ ↓
+Planner
+ ↓
+Calculator
+ ↓
+Executor
+ ↓
+Generator
+ ↓
+Answer
+```
+
+Example:
+
+```text
+"What is 10 * 5?"
+```
+
+The planner selects the calculator and produces a structured tool call:
+
+```json
+{
+  "tool": "calculator",
+  "arguments": {
+    "expression": "10 * 5"
+  }
+}
+```
+
+## Failure Recovery
+
+When a tool execution fails:
+
+```text
+User
+ ↓
+Planner
+ ↓
+Executor
+ ↓
+Tool Failure
+ ↓
+Replan
+ ↓
+Executor
+ ↓
+Generator
+ ↓
+Answer
+```
+
+The pipeline supports bounded replanning rather than endlessly retrying failed execution.
+
+---
+
+# Components
+
+## API
 
 * Receives HTTP requests
 * Validates request payloads
+* Exposes the chat endpoint
 * Exposes health and readiness endpoints
 
-#### Pipeline
+## Pipeline
 
 * Orchestrates the complete agent workflow
 * Coordinates planning, execution, and generation
 * Handles recovery and replanning
 
-#### Planner
+## Planner
 
 * Determines whether a tool is required
 * Selects the appropriate tool
-* Produces validated tool arguments
+* Produces structured tool arguments
 
-#### Executor
+## Executor
 
 * Executes tools
 * Applies retries and timeouts
-* Isolates execution failures
+* Isolates tool execution failures
 
-#### Generator
+## Generator
 
 * Interacts with Ollama
 * Generates user-facing responses
 * Applies retry and backoff policies
 
-#### Tool Registry
+## Tool Registry
 
-* Maintains available tools
+* Maintains the available tools
 * Provides tool discovery for planning and execution
+
+## Tool Validator
+
+* Validates tool arguments
+* Applies JSON Schema constraints before execution
 
 ---
 
-## Features
+# Features
 
-### Agent Capabilities
+## Agent Capabilities
 
 * Tool-aware planning
 * Structured tool calls
@@ -90,7 +211,7 @@ Tool Required?
 * Automatic replanning after failures
 * JSON Schema tool argument validation
 
-### Reliability
+## Reliability
 
 * LLM retry and backoff
 * Tool retry support
@@ -98,24 +219,23 @@ Tool Required?
 * Exception isolation
 * Recovery and replanning flow
 
-### Production Readiness
-
-* Health endpoint
-* Readiness endpoint
-* Configuration validation
-* Docker healthchecks
-* Non-root container execution
-* Automatic restart policy
-* Production dependency separation
-
-### Security
+## Security
 
 * Request validation
 * Tool argument validation
 * Controlled tool execution
 * Safe error handling
+* Non-root API container
 
-### Testing
+## Runtime
+
+* API health endpoint
+* API readiness endpoint
+* Docker healthchecks
+* Automatic container restart policy
+* Production and development dependency separation
+
+## Testing
 
 * Unit tests
 * API tests
@@ -124,18 +244,56 @@ Tool Required?
 * Generator tests
 * Executor tests
 * Pipeline tests
+* Tool registry tests
 * Tool validation tests
+* Individual tool tests
 
 ---
 
-## Requirements
+# Available Tools
+
+The current implementation intentionally keeps the tool set small and focused.
+
+## Calculator
+
+Evaluates mathematical expressions through a restricted expression evaluator.
+
+Example:
+
+```json
+{
+  "tool": "calculator",
+  "arguments": {
+    "expression": "10 * 5"
+  }
+}
+```
+
+## DateTime
+
+Returns the current UTC date and time.
+
+Example:
+
+```json
+{
+  "tool": "datetime",
+  "arguments": {}
+}
+```
+
+The tool registry is designed so that additional tools can be added without changing the core planner and executor architecture.
+
+---
+
+# Requirements
 
 * Docker Desktop
 * Docker Compose
 
 ---
 
-## Quick Start
+# Quick Start
 
 Build and start the containers:
 
@@ -163,9 +321,9 @@ http://localhost:8000
 
 ---
 
-## Health and Readiness
+# Health and Readiness
 
-### Health Endpoint
+## Health Endpoint
 
 Checks whether the API process is running.
 
@@ -181,7 +339,7 @@ Expected response:
 }
 ```
 
-### Readiness Endpoint
+## Readiness Endpoint
 
 Checks whether:
 
@@ -208,7 +366,7 @@ If Ollama is unavailable or the configured model has not been downloaded, the en
 
 ---
 
-## Chat API
+# Chat API
 
 Send a request:
 
@@ -232,13 +390,17 @@ Example response:
 }
 ```
 
-### Request Validation
+The response exposes the selected tool and tool result so the execution flow is observable through the API.
+
+---
+
+# Request Validation
 
 The `question` field:
 
 * Cannot be blank
 * Cannot contain only whitespace
-* Maximum length: 4000 characters
+* Has a maximum length of 4000 characters
 
 Invalid requests return:
 
@@ -246,41 +408,11 @@ Invalid requests return:
 422 Unprocessable Entity
 ```
 
----
-
-## Available Tools
-
-### Calculator
-
-Evaluates mathematical expressions.
-
-Example tool call:
-
-```json
-{
-  "tool": "calculator",
-  "arguments": {
-    "expression": "10 * 5"
-  }
-}
-```
-
-### DateTime
-
-Returns the current UTC date and time.
-
-Example tool call:
-
-```json
-{
-  "tool": "datetime",
-  "arguments": {}
-}
-```
+Tool arguments are validated separately through JSON Schema before execution.
 
 ---
 
-## Configuration
+# Configuration
 
 The application is configured through environment variables.
 
@@ -312,39 +444,62 @@ docker compose up -d --build
 
 ---
 
-## Production Runtime
+# Production-Oriented Runtime
 
 The Docker runtime includes several production-oriented safeguards.
 
-### Container Security
+## Container Security
 
 * API container runs as a non-root user
 * Minimal Python base image
 * Isolated application user
 
-### Health Monitoring
+## Health Monitoring
 
 * API container healthcheck
 * Ollama container healthcheck
 * Readiness endpoint
 * Service dependency health validation
 
-### Reliability
+## Reliability
 
 * Automatic container restart policy
 * Retry and backoff support
 * Tool execution timeout protection
 * Recovery and replanning flow
 
-### Dependency Management
+## Dependency Management
 
 * Production dependencies separated from development dependencies
-* Test packages excluded from production images
+* Test dependencies excluded from the production image
 * Smaller production runtime footprint
 
 ---
 
-## Testing
+# CI/CD
+
+GitHub Actions runs the automated validation pipeline on pull requests and pushes to `main`.
+
+The workflow:
+
+```text
+GitHub Push / Pull Request
+          ↓
+     Install Dependencies
+          ↓
+        Run Tests
+          ↓
+   Build Docker Image
+          ↓
+      Build & Push
+        to GHCR
+```
+
+The Docker image is published to GitHub Container Registry after the test job succeeds on the configured main-branch and version-tag pushes.
+
+---
+
+# Testing
 
 The project includes tests for:
 
@@ -357,61 +512,100 @@ The project includes tests for:
 * Pipeline
 * Tool Registry
 * Tool Validator
-* Individual tools
+* Calculator
+* DateTime tool
 
-Production Docker images intentionally exclude test dependencies such as `pytest` and `pytest-cov`.
+Tests should be executed in the development environment.
 
-Tests should be executed in a development environment.
+Example:
+
+```powershell
+pytest -q
+```
+
+Production Docker images intentionally exclude development and test dependencies.
 
 ---
 
-## Project Structure
+# Project Structure
 
 ```text
-app/
-  api.py              FastAPI endpoints
-  config.py           Configuration and validation
-  executor.py         Tool execution logic
-  generator.py        Ollama integration
-  models.py           Shared models
-  pipeline.py         Agent orchestration
-  planner.py          Tool planning
-  tool_registry.py    Tool registration
-  tool_validator.py   Tool argument validation
-
-tools/
-  base.py             Tool interface
-  calculator.py       Calculator tool
-  datetime_tool.py    Date and time tool
-
-tests/
-  test_api.py
-  test_calculator.py
-  test_config.py
-  test_datetime_tool.py
-  test_executor.py
-  test_generator.py
-  test_models.py
-  test_pipeline.py
-  test_planner.py
-  test_tool_registry.py
-  test_tool_validator.py
+enterprise-ai-agent/
+│
+├── app/
+│   ├── api.py              FastAPI endpoints
+│   ├── config.py           Configuration and validation
+│   ├── executor.py         Tool execution logic
+│   ├── generator.py        Ollama integration
+│   ├── models.py           Shared models
+│   ├── pipeline.py         Agent orchestration
+│   ├── planner.py          Tool planning
+│   ├── tool_registry.py    Tool registration
+│   └── tool_validator.py   Tool argument validation
+│
+├── tools/
+│   ├── base.py             Tool interface
+│   ├── calculator.py       Calculator tool
+│   └── datetime_tool.py    Date and time tool
+│
+├── tests/
+│   ├── test_api.py
+│   ├── test_calculator.py
+│   ├── test_config.py
+│   ├── test_datetime_tool.py
+│   ├── test_executor.py
+│   ├── test_generator.py
+│   ├── test_models.py
+│   ├── test_pipeline.py
+│   ├── test_planner.py
+│   ├── test_tool_registry.py
+│   └── test_tool_validator.py
+│
+├── .github/
+│   └── workflows/
+│       └── ci.yml
+│
+├── Dockerfile
+├── docker-compose.yml
+├── docker-compose.prod.yml
+├── requirements.txt
+├── requirements-dev.txt
+└── README.md
 ```
 
 ---
 
-## Stop the Application
+# Current Scope
 
-Stop all containers:
+The current implementation focuses on the core agent runtime and intentionally keeps the available tools small.
 
-```powershell
-docker compose down
-```
+It does not currently include:
 
-Remove containers and Ollama models:
+* External SaaS/API tools
+* Document retrieval
+* Authentication and authorization
+* Conversation persistence
+* Web-based UI
 
-```powershell
-docker compose down -v
-```
+The architecture is designed so these capabilities can be introduced as additional tools or services without changing the core planner/executor flow.
 
-This also removes downloaded Ollama models stored in the Docker volume.
+---
+
+# Future Improvements
+
+Possible next steps include:
+
+* Document search as an agent tool
+* Agentic RAG workflows
+* Additional external API tools
+* Authentication and authorization
+* Conversation memory
+* Streaming responses
+* Tracing and observability
+* Evaluation and benchmark integration
+
+---
+
+# License
+
+This project is licensed under the MIT License. See the `LICENSE` file for details.
