@@ -60,9 +60,21 @@ class ToolResult:
 
 
 @dataclass
+class AgentStep:
+    """One tool call made while answering a request."""
+
+    tool: str
+    arguments: dict[str, Any]
+    success: bool
+    result: Any = None
+    error: str | None = None
+
+
+@dataclass
 class AgentResult:
     answer: str
     tool: str | None = None
     arguments: dict[str, Any] | None = None
     tool_result: Any = None
     error: str | None = None
+    steps: list[AgentStep] = field(default_factory=list)

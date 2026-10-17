@@ -6,9 +6,9 @@ class ToolRequestRejected(ValueError):
     """The tool understood the request but will not carry it out.
 
     Raise this when the request itself cannot be fulfilled, for example
-    because it exceeds a limit. Replanning cannot fix such a request without
-    changing what the user asked for, so the pipeline explains the failure
-    instead of asking the planner for a different tool call.
+    because it exceeds a limit. Another tool call could only succeed by
+    changing what the user asked for, so the agent withdraws the tools and
+    has the model explain the failure instead.
     """
 
 

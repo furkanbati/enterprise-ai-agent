@@ -9,6 +9,7 @@ from ollama import ResponseError
 from prometheus_client import Counter, Histogram, make_asgi_app
 from pydantic import BaseModel, Field, field_validator
 
+from app.agent import Agent
 from app.executor import Executor
 from app.generator import Generator
 from app.logging import (
@@ -19,8 +20,6 @@ from app.logging import (
     set_request_id,
 )
 from app.models import AgentResult
-from app.pipeline import Pipeline
-from app.planner import Planner
 from app.tool_registry import ToolRegistry
 from tools.calculator import CalculatorTool
 from tools.datetime_tool import DateTimeTool
@@ -79,13 +78,12 @@ registry = ToolRegistry(
 )
 
 generator = Generator()
-planner = Planner(generator, registry)
 executor = Executor(registry)
 
-pipeline = Pipeline(
-    planner=planner,
-    executor=executor,
+agent = Agent(
     generator=generator,
+    executor=executor,
+    registry=registry,
 )
 
 
@@ -200,7 +198,7 @@ def ready():
 @app.post("/chat", response_model=ChatResponse)
 def chat(request: ChatRequest):
     try:
-        result: AgentResult = pipeline.run(request.question)
+        result: AgentResult = agent.run(request.question)
 
     except ConnectionError as exc:
         logger.exception("AI service connection failed")

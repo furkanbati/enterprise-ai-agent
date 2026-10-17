@@ -20,6 +20,17 @@ class ToolRegistry:
 
         return self._tools[name]
 
+    def tool_schemas(self) -> list[dict]:
+        """Tool definitions in the format used for native tool calling."""
+
+        return [
+            {
+                "type": "function",
+                "function": description,
+            }
+            for description in self.descriptions()
+        ]
+
     def descriptions(self) -> list[dict]:
         return [
             {

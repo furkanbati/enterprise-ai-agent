@@ -123,3 +123,14 @@ def test_registry_rejects_duplicate_tool_names():
                 FakeTool(name="calculator"),
             ]
         )
+
+
+def test_registry_returns_native_tool_schemas():
+    registry = ToolRegistry([FakeTool("calculator")])
+
+    assert registry.tool_schemas() == [
+        {
+            "type": "function",
+            "function": registry.descriptions()[0],
+        }
+    ]

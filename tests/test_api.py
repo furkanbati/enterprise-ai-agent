@@ -6,7 +6,7 @@ from app import api
 from app.models import AgentResult
 
 
-class FailingPipeline:
+class FailingAgent:
     def __init__(self, error):
         self.error = error
 
@@ -14,7 +14,7 @@ class FailingPipeline:
         raise self.error
 
 
-class SuccessfulPipeline:
+class SuccessfulAgent:
     def __init__(self, result):
         self.result = result
 
@@ -46,8 +46,8 @@ def test_chat_returns_successful_response(monkeypatch):
 
     monkeypatch.setattr(
         api,
-        "pipeline",
-        SuccessfulPipeline(result),
+        "agent",
+        SuccessfulAgent(result),
     )
 
     client = TestClient(api.app)
@@ -72,8 +72,8 @@ def test_chat_returns_service_unavailable_when_ai_connection_fails(
 ):
     monkeypatch.setattr(
         api,
-        "pipeline",
-        FailingPipeline(ConnectionError("connection failed")),
+        "agent",
+        FailingAgent(ConnectionError("connection failed")),
     )
 
     client = TestClient(api.app)
@@ -94,8 +94,8 @@ def test_chat_returns_service_unavailable_when_ai_request_times_out(
 ):
     monkeypatch.setattr(
         api,
-        "pipeline",
-        FailingPipeline(
+        "agent",
+        FailingAgent(
             httpx.TimeoutException("request timed out"),
         ),
     )
@@ -124,8 +124,8 @@ def test_chat_returns_bad_gateway_when_ai_response_error_occurs(
 
     monkeypatch.setattr(
         api,
-        "pipeline",
-        FailingPipeline(
+        "agent",
+        FailingAgent(
             FakeResponseError("upstream failure"),
         ),
     )
@@ -148,8 +148,8 @@ def test_chat_returns_bad_gateway_when_ai_response_is_invalid(
 ):
     monkeypatch.setattr(
         api,
-        "pipeline",
-        FailingPipeline(ValueError("invalid planner response")),
+        "agent",
+        FailingAgent(ValueError("invalid model response")),
     )
 
     client = TestClient(api.app)
@@ -169,8 +169,8 @@ def test_chat_returns_internal_server_error_for_unexpected_exception(
 ):
     monkeypatch.setattr(
         api,
-        "pipeline",
-        FailingPipeline(RuntimeError("internal implementation failure")),
+        "agent",
+        FailingAgent(RuntimeError("internal implementation failure")),
     )
 
     client = TestClient(
@@ -281,8 +281,8 @@ def test_metrics_label_unknown_paths_as_unmatched():
 def test_metrics_count_unhandled_exceptions(monkeypatch):
     monkeypatch.setattr(
         api,
-        "pipeline",
-        FailingPipeline(RuntimeError("boom")),
+        "agent",
+        FailingAgent(RuntimeError("boom")),
     )
     client = TestClient(api.app, raise_server_exceptions=False)
     before = http_requests_total("POST", "/chat", "500")

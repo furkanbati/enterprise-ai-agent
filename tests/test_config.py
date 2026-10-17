@@ -33,8 +33,6 @@ def load_config_with_environment(
     [
         ("GENERATOR_MAX_RETRIES", "-1"),
         ("EXECUTOR_MAX_RETRIES", "-1"),
-        ("PIPELINE_MAX_REPLANS", "-1"),
-        ("PLANNER_MAX_RETRIES", "-1"),
         ("RETRY_BASE_DELAY", "-1"),
         ("TOOL_TIMEOUT", "-1"),
     ],
@@ -77,6 +75,22 @@ def test_rejects_empty_string_settings(name):
 
 
 @pytest.mark.parametrize("value", ["0", "-1"])
+def test_rejects_agent_max_steps_below_one(value):
+    environment = os.environ | {"AGENT_MAX_STEPS": value}
+
+    result = subprocess.run(
+        [sys.executable, "-c", "import app.config"],
+        env=environment,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert result.returncode != 0
+    assert "AGENT_MAX_STEPS must be at least 1." in result.stderr
+
+
+@pytest.mark.parametrize("value", ["0", "-1"])
 def test_rejects_non_positive_generator_timeout(value):
     environment = os.environ | {"GENERATOR_TIMEOUT": value}
 
@@ -97,11 +111,10 @@ def test_rejects_non_positive_generator_timeout(value):
     [
         ("GENERATOR_MAX_RETRIES", "-1"),
         ("EXECUTOR_MAX_RETRIES", "-1"),
-        ("PIPELINE_MAX_REPLANS", "-1"),
-        ("PLANNER_MAX_RETRIES", "-1"),
         ("RETRY_BASE_DELAY", "-1"),
         ("TOOL_TIMEOUT", "-1"),
         ("GENERATOR_TIMEOUT", "0"),
+        ("AGENT_MAX_STEPS", "0"),
         ("OLLAMA_HOST", ""),
         ("CHAT_MODEL", ""),
     ],
