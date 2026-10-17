@@ -605,6 +605,30 @@ Each column changes one thing. The effects that can be attributed to a change:
 
 With 3 runs per case a single run moves a case by 33 points, so smaller differences are within run-to-run variation.
 
+### Model comparison: qwen2.5:7b vs llama3.1:8b
+
+Same code, tools, cases and fixed clock; only the model changes. 21 cases, 3 runs each. Reports: [qwen2.5:7b](evaluation/results/qwen2.5-7b.md), [llama3.1:8b](evaluation/results/llama3.1-8b.md).
+
+| Category | qwen2.5:7b | llama3.1:8b |
+|---|---|---|
+| **Overall pass** | **86%** | **43%** |
+| **Overall tool-verified** | **74%** | **49%** |
+| No tool | 100% | 11% |
+| Single tool | 100% | 100% |
+| Date | 78% | 67% |
+| Chained tools | 67% | 0% |
+| Multi-step | 100% | 67% |
+| Self-correction | 100% | 0% |
+| Rejection | 50% | 17% |
+
+What the llama3.1:8b runs show:
+
+- **It does not answer without tools when tools are offered.** "Say hello in Turkish" got "I don't have the required function", and "Explain what an API is" was sent to the calculator as prose.
+- **It ignores the tool's date.** With `datetime` returning 2026, it answered "It's 2024" in every run, and passed the literal string `"datetime"` to `date_diff` as a start date.
+- **It writes corrected tool calls as text.** After a tool error, the next call appears inside the answer, for example `{"name": "calculator", "parameters": {"expression": "2**10"}}`, instead of as a native tool call, so the agent treats it as the final answer. This explains most of the 0% in self-correction. It is a failure to follow the tool calling format; parsing tool calls out of text as a fallback could recover part of it.
+
+Single-tool calculations and the weekday question passed every run with both models, so those results do not depend on the model. qwen2.5:7b remains the default. The gap is large enough that more runs would not reverse it; latency is not compared because the llama3.1 run had less free memory.
+
 ### Tried and rejected: a prompt rule for the date
 
 The model sometimes answered "2023" for "What year is it?" without calling `datetime`. A system-prompt rule was tested to address it:
@@ -653,7 +677,7 @@ Possible next steps include:
 * Conversation memory
 * Streaming responses
 * Tracing and observability
-* Model comparison with the evaluation suite
+* Fallback parsing for tool calls written as text, then a re-run of the llama3.1 comparison
 * Process-isolated tool execution
 
 ---
