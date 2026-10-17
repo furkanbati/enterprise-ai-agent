@@ -214,7 +214,7 @@ def test_execute_times_out_slow_tool():
     assert elapsed < 0.15
 
 
-def test_execute_retries_after_timeout():
+def test_execute_does_not_retry_after_timeout():
     tool = FakeTool(
         result=42,
         delay_times=[0.05, 0],
@@ -234,12 +234,16 @@ def test_execute_retries_after_timeout():
 
     result = executor.execute(tool_call)
 
-    assert result.success is True
-    assert result.result == 42
-    assert result.error is None
-    assert result.tool == "calculator"
-    assert result.attempts == 2
-    assert tool.call_count == 2
+    assert result.success is False
+    assert result.error == (
+        "Tool execution timed out after 0.01 seconds."
+    )
+    assert result.attempts == 1
+
+    # The timed-out call is still running in its worker thread; a retry
+    # would have started a second, concurrent execution.
+    time.sleep(0.1)
+    assert tool.call_count == 1
 
 
 def test_execute_completes_before_timeout():

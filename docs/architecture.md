@@ -328,7 +328,9 @@ Generator retries temporary LLM failures using configurable retry limits and del
 
 ### Tool Retries
 
-Executor can retry tool execution when appropriate.
+Executor retries tool calls that fail with a `ConnectionError`, using exponential backoff.
+
+Timeouts are not retried. A tool runs in a worker thread, and a thread cannot be stopped once it has started, so a timed-out call keeps running in the background. Retrying it would start a second concurrent execution of the same call and repeat any side effects.
 
 ### Timeout Protection
 
@@ -338,7 +340,9 @@ Tool execution is limited by:
 TOOL_TIMEOUT
 ```
 
-Long-running tools cannot block the request indefinitely.
+When a tool exceeds the timeout, the request stops waiting for it and receives a failed tool result.
+
+The timeout cannot interrupt CPU-bound work that holds the Python GIL, and it does not stop the worker thread. Tools therefore bound their own work: the calculator rejects operations whose result would exceed 1,000 digits before computing them.
 
 ### Exception Isolation
 

@@ -180,7 +180,7 @@ The pipeline supports bounded replanning rather than endlessly retrying failed e
 ## Executor
 
 * Executes tools
-* Applies retries and timeouts
+* Applies timeouts and retries connection failures
 * Isolates tool execution failures
 
 ## Generator
@@ -213,9 +213,9 @@ The pipeline supports bounded replanning rather than endlessly retrying failed e
 
 ## Reliability
 
-* LLM retry and backoff
-* Tool retry support
-* Tool execution timeout protection
+* LLM request timeouts, retry and backoff
+* Tool retries for connection failures
+* Tool execution timeouts (timed-out calls are not retried)
 * Exception isolation
 * Recovery and replanning flow
 
@@ -257,6 +257,10 @@ The current implementation intentionally keeps the tool set small and focused.
 ## Calculator
 
 Evaluates mathematical expressions through a restricted expression evaluator.
+
+Supported: numbers, `+ - * / // % **`, parentheses, `abs`, `round`, `min`, `max`, `int`, `float`, `sqrt`, `pi`, and `e`.
+
+Integer results are limited to 1,000 digits. Oversized operations are rejected before they are computed, so a single expression cannot occupy a CPU core.
 
 Example:
 

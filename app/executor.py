@@ -145,50 +145,36 @@ class Executor:
                 )
 
             except TimeoutError:
-                logger.warning(
-                    "Tool '%s' timed out on attempt %s/%s",
+                # A worker thread cannot be stopped once it is running, so
+                # the timed-out call keeps going in the background. Retrying
+                # would start a second concurrent execution of the same
+                # call, which repeats any side effects and adds load instead
+                # of recovering, so timeouts are not retried.
+                duration = (
+                    time.perf_counter() - start_time
+                )
+
+                logger.error(
+                    "Tool '%s' timed out after %.2fs on attempt %s",
                     tool_call.tool,
+                    self.timeout,
                     attempt + 1,
-                    self.max_retries + 1,
                 )
 
-                future.cancel()
+                TOOL_FAILURES_TOTAL.labels(
+                    tool=tool_call.tool,
+                ).inc()
 
-                if attempt >= self.max_retries:
-                    duration = (
-                        time.perf_counter() - start_time
-                    )
-
-                    logger.error(
-                        "Tool '%s' timed out after %s attempts",
-                        tool_call.tool,
-                        attempt + 1,
-                    )
-
-                    TOOL_FAILURES_TOTAL.labels(
-                        tool=tool_call.tool,
-                    ).inc()
-
-                    return ToolResult(
-                        success=False,
-                        tool=tool_call.tool,
-                        attempts=attempt + 1,
-                        execution_time=duration,
-                        error=(
-                            f"Tool execution timed out after "
-                            f"{self.timeout} seconds."
-                        ),
-                    )
-
-                delay = self._get_retry_delay(attempt)
-
-                logger.warning(
-                    "Retrying tool '%s' in %.2fs",
-                    tool_call.tool,
-                    delay,
+                return ToolResult(
+                    success=False,
+                    tool=tool_call.tool,
+                    attempts=attempt + 1,
+                    execution_time=duration,
+                    error=(
+                        f"Tool execution timed out after "
+                        f"{self.timeout} seconds."
+                    ),
                 )
-
-                time.sleep(delay)
 
             except ConnectionError as exc:
                 logger.warning(
