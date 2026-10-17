@@ -1,5 +1,4 @@
 from datetime import datetime, timezone
-from typing import Any
 
 from tools.datetime_tool import DateTimeTool
 
@@ -10,10 +9,14 @@ EVALUATION_NOW = datetime(2026, 10, 17, 9, 0, 0, tzinfo=timezone.utc)
 
 
 class FixedDateTimeTool(DateTimeTool):
-    """DateTimeTool with a fixed clock, using the same name and schema."""
+    """DateTimeTool with a fixed clock.
 
-    def __init__(self, now: datetime = EVALUATION_NOW):
-        self.now = now
+    Only the clock is replaced; the name, schema and output format are the
+    real tool's, so the evaluation measures what the agent actually sees.
+    """
 
-    def execute(self, arguments: dict[str, Any]) -> str:
-        return self.now.isoformat()
+    def __init__(self, fixed_now: datetime = EVALUATION_NOW):
+        self.fixed_now = fixed_now
+
+    def now(self) -> datetime:
+        return self.fixed_now

@@ -6,6 +6,7 @@ from app.models import AgentResult, AgentStep
 from evaluation.checks import check, extract_numbers
 from evaluation.dataset import CATEGORIES, EvalCase, load_cases
 from evaluation.tools import EVALUATION_NOW, FixedDateTimeTool
+from tools.datetime_tool import DateTimeTool
 
 
 def step(tool="calculator", success=True, result=None, rejected=False):
@@ -296,5 +297,9 @@ def test_fixed_datetime_tool_matches_the_real_tool_interface():
     tool = FixedDateTimeTool()
 
     assert tool.name == "datetime"
-    assert tool.execute({}) == "2026-10-17T09:00:00+00:00"
-    assert tool.now == EVALUATION_NOW
+    assert tool.parameters == DateTimeTool().parameters
+    assert tool.now() == EVALUATION_NOW
+    assert tool.execute({}) == {
+        "datetime": "2026-10-17T09:00:00+00:00",
+        "weekday": "Saturday",
+    }

@@ -231,7 +231,13 @@ Evaluates arithmetic expressions with a restricted evaluator: numbers, `+ - * / 
 
 ### DateTime
 
-Returns the current UTC date and time.
+Returns the current UTC date and time with the day of the week:
+
+```json
+{"datetime": "2026-10-17T09:00:00+00:00", "weekday": "Saturday"}
+```
+
+The weekday is computed by the tool. When the tool returned only the timestamp, the model named the wrong weekday in every evaluation run.
 
 ---
 

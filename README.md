@@ -193,7 +193,13 @@ Integer results are limited to 1,000 digits. Oversized operations are rejected b
 
 ## DateTime
 
-Returns the current UTC date and time.
+Returns the current UTC date and time with the day of the week:
+
+```json
+{"datetime": "2026-10-17T09:00:00+00:00", "weekday": "Saturday"}
+```
+
+The weekday is computed by the tool. When the tool returned only the timestamp, the model named the wrong weekday in every evaluation run.
 
 New tools implement the `Tool` interface in `tools/base.py` and are added to the registry; their JSON Schema is sent to the model automatically.
 
@@ -559,27 +565,29 @@ Reports are written to `evaluation/results/<model>.md` and `.json`, including a 
 docker compose cp agent-api:/app/evaluation/results ./evaluation/
 ```
 
-### Baseline: qwen2.5:7b
+### Results: qwen2.5:7b
 
-21 cases, 3 runs each. [Full report](evaluation/results/qwen2.5-7b.md).
+21 cases, 3 runs each. Reports: [baseline](evaluation/results/qwen2.5-7b-baseline.md) and [current](evaluation/results/qwen2.5-7b.md).
 
-| Category | Pass | Tool-verified |
-|---|---|---|
-| **Overall** | **73%** | **51%** |
-| No tool | 100% | n/a |
-| Single tool | 100% | 100% |
-| Date | 67% | n/a |
-| Chained tools | 17% | 0% |
-| Multi-step | 83% | 50% |
-| Self-correction | 100% | 33% |
-| Rejection | 50% | n/a |
+| Category | Baseline pass | Current pass | Current tool-verified |
+|---|---|---|---|
+| **Overall** | 73% | **81%** | 59% |
+| No tool | 100% | 100% | n/a |
+| Single tool | 100% | 100% | 100% |
+| Date | 67% | 89% | n/a |
+| Chained tools | 17% | 33% | 0% |
+| Multi-step | 83% | 100% | 83% |
+| Self-correction | 100% | 100% | 50% |
+| Rejection | 50% | 50% | n/a |
 
-What the baseline shows:
+The only change between the two runs is the datetime tool, which now returns the weekday. Its direct effect is the weekday question going from 0/3 to 3/3. With 3 runs per case a single run moves a case by 33 points, so the other differences, for example in multi-step cases that never use the datetime tool, are within run-to-run variation.
+
+What the evaluation shows:
 
 - **Simple tool use is reliable.** Every single-tool calculation passed, and every answer came from the calculator.
-- **Chaining is the weak spot.** The model calls `datetime` but almost never passes the date to the calculator; it reasons about dates itself and gets them wrong. Several answers rejected the tool's date as wrong ("If today is October 17, 2023, then 25 years from now will be 2048"), which points to the model trusting its training data over the tool.
-- **Dates without weekday information are guessed.** The datetime tool returns an ISO timestamp only, and the model named the wrong weekday in all three runs.
-- **Correct is not the same as verified.** Self-correction cases passed every time, but in two thirds of the runs the model stated the corrected value after the error instead of calling the calculator again.
+- **Chaining is the weak spot.** The model calls `datetime` but rarely passes the date to the calculator; it reasons about dates itself and gets them wrong ("89 days until Christmas" instead of 69). Several answers dismiss the tool's date in favour of the model's own ("If today is October 17, 2023, then 25 years from now will be 2048").
+- **Facts the tool states are not guessed.** Before the datetime tool returned the weekday, the model named the wrong day in every run (Sunday, Friday, Friday); with the weekday in the result it was right every time.
+- **Correct is not the same as verified.** Self-correction cases pass every time, but in half of the runs the model states the corrected value after the error instead of calling the calculator again.
 - **The rejection safeguard works when it is reached.** `2 ** 5000000` was rejected and explained in every run. For `10 ** 2000` the model wrote `10^2000`, got a fixable error, and stopped instead of retrying, so the request never reached the size limit.
 
 The answer checks are lexical: a case passes if the expected number appears anywhere in the answer. The dataset is small and hand-written, so the results are a regression baseline for this project, not a general benchmark.
@@ -588,8 +596,8 @@ The answer checks are lexical: a case passes if the expected number appears anyw
 
 # Known Limitations
 
-* **Model reasoning.** The loop supports chaining tools, and this is covered by tests, but `qwen2.5:7b` rarely uses it: chained-tool cases pass 17% of the time (see Evaluation). The model does date arithmetic itself after calling `datetime` instead of passing the dates to the calculator.
-* **Unverified final steps.** After a tool error, the model often states the corrected result without calling the tool again; only 33% of self-correction runs were tool-verified.
+* **Model reasoning.** The loop supports chaining tools, and this is covered by tests, but `qwen2.5:7b` rarely uses it: chained-tool cases pass 33% of the time (see Evaluation). The model does date arithmetic itself after calling `datetime` instead of passing the dates to the calculator.
+* **Unverified final steps.** After a tool error, the model often states the corrected result without calling the tool again; only half of the self-correction runs were tool-verified.
 * **Thread-based timeouts.** A timed-out tool keeps running in its worker thread. Tools bound their own work, but full isolation would need a separate process per call.
 
 ---
