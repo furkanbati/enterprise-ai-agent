@@ -110,6 +110,17 @@ class CalculatorTool(Tool):
         if not expression:
             raise ValueError("Calculator requires an expression.")
 
+        try:
+            # mode="eval" accepts a single expression only. simpleeval would
+            # otherwise evaluate the first of "a = 1; a * 2" with a warning
+            # and report the partial result as a success.
+            ast.parse(expression.strip(), mode="eval")
+        except SyntaxError as exc:
+            raise ValueError(
+                "Invalid expression. Provide one arithmetic expression "
+                "without assignments, semicolons or text."
+            ) from exc
+
         evaluator = SimpleEval(
             operators=OPERATORS,
             functions=FUNCTIONS,
