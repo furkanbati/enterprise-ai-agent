@@ -138,19 +138,14 @@ async def request_id_middleware(
     try:
         response = await call_next(request)
 
-        if request.url.path != "/metrics":
-            duration = time.perf_counter() - start_time
+    except Exception:
+        # Unhandled errors propagate to the exception handler outside this
+        # middleware; record them here so 500s show up in the metrics.
+        _record_request_metrics(request, 500, start_time)
+        raise
 
-            HTTP_REQUESTS_TOTAL.labels(
-                method=request.method,
-                path=request.url.path,
-                status=str(response.status_code),
-            ).inc()
-
-            HTTP_REQUEST_DURATION.labels(
-                method=request.method,
-                path=request.url.path,
-            ).observe(duration)
+    else:
+        _record_request_metrics(request, response.status_code, start_time)
 
         response.headers["X-Request-ID"] = request_id
 
@@ -158,6 +153,31 @@ async def request_id_middleware(
 
     finally:
         reset_request_id(token)
+
+
+def _record_request_metrics(
+    request: Request,
+    status_code: int,
+    start_time: float,
+) -> None:
+    if request.url.path == "/metrics":
+        return
+
+    # Label by route template rather than raw URL path so that requests to
+    # arbitrary unknown paths cannot create unbounded metric series.
+    route = request.scope.get("route")
+    path = getattr(route, "path", None) or "unmatched"
+
+    HTTP_REQUESTS_TOTAL.labels(
+        method=request.method,
+        path=path,
+        status=str(status_code),
+    ).inc()
+
+    HTTP_REQUEST_DURATION.labels(
+        method=request.method,
+        path=path,
+    ).observe(time.perf_counter() - start_time)
 
 
 @app.get("/health")

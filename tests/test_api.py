@@ -1,5 +1,6 @@
 import httpx
 from fastapi.testclient import TestClient
+from prometheus_client import REGISTRY
 
 from app import api
 from app.models import AgentResult
@@ -256,3 +257,37 @@ def test_ready_returns_service_unavailable_when_ai_service_is_down(
     assert response.json() == {
         "detail": "The AI service is temporarily unavailable."
     }
+
+def http_requests_total(method, path, status):
+    value = REGISTRY.get_sample_value(
+        "agent_http_requests_total",
+        {"method": method, "path": path, "status": status},
+    )
+
+    return value or 0.0
+
+
+def test_metrics_label_unknown_paths_as_unmatched():
+    client = TestClient(api.app)
+    before = http_requests_total("GET", "unmatched", "404")
+
+    client.get("/random-path-1")
+    client.get("/random-path-2")
+
+    assert http_requests_total("GET", "unmatched", "404") == before + 2
+    assert http_requests_total("GET", "/random-path-1", "404") == 0.0
+
+
+def test_metrics_count_unhandled_exceptions(monkeypatch):
+    monkeypatch.setattr(
+        api,
+        "pipeline",
+        FailingPipeline(RuntimeError("boom")),
+    )
+    client = TestClient(api.app, raise_server_exceptions=False)
+    before = http_requests_total("POST", "/chat", "500")
+
+    response = client.post("/chat", json={"question": "Hello"})
+
+    assert response.status_code == 500
+    assert http_requests_total("POST", "/chat", "500") == before + 1
