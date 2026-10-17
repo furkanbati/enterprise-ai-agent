@@ -349,6 +349,8 @@ This makes the deployed Ollama image deterministic and reduces the risk of an un
 
 The API image is built locally from the project's `Dockerfile`.
 
+Python dependencies in `requirements.txt` and `requirements-dev.txt` are pinned to exact versions, so rebuilding the image installs the same packages that the test suite ran against.
+
 ---
 
 ## Docker Build
