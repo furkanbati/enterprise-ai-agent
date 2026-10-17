@@ -18,6 +18,29 @@ REPLANS_TOTAL = Counter(
 )
 
 
+# Upper bound for tool output embedded in a prompt, so a large tool result
+# cannot crowd the question out of the model's context window.
+MAX_PROMPT_VALUE_CHARS = 4_000
+
+
+def format_for_prompt(value) -> str:
+    """Render a tool value as bounded text for an LLM prompt."""
+
+    try:
+        text = str(value)
+    except ValueError:
+        # str() refuses integers above Python's digit conversion limit.
+        return "[value too large to display]"
+
+    if len(text) <= MAX_PROMPT_VALUE_CHARS:
+        return text
+
+    return (
+        text[:MAX_PROMPT_VALUE_CHARS]
+        + f"\n[truncated: {len(text)} characters in total]"
+    )
+
+
 class Pipeline:
 
     def __init__(
@@ -147,7 +170,7 @@ Tool used:
 {tool_call.tool}
 
 Tool result:
-{tool_result}
+{format_for_prompt(tool_result)}
 
 Provide the final answer to the user.
 """
@@ -166,10 +189,10 @@ Tool used:
 {tool_call.tool}
 
 Tool arguments:
-{tool_call.arguments}
+{format_for_prompt(tool_call.arguments)}
 
 Tool error:
-{error}
+{format_for_prompt(error)}
 
 Explain the issue to the user without inventing a result.
 """

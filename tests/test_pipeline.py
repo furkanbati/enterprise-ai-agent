@@ -1,5 +1,5 @@
 from app.models import AgentResult, ToolCall, ToolResult
-from app.pipeline import Pipeline
+from app.pipeline import MAX_PROMPT_VALUE_CHARS, Pipeline, format_for_prompt
 from app.config import PIPELINE_MAX_REPLANS
 import pytest
 
@@ -463,3 +463,44 @@ def test_pipeline_propagates_generator_failure_after_tool_failure():
     ):
         pipeline.run("1 / 0")
 
+
+
+def run_with_tool_result(tool_result):
+    generator = FakeGenerator()
+
+    pipeline = Pipeline(
+        planner=FakePlanner(
+            tool_call=ToolCall(tool="calculator", arguments={}),
+        ),
+        executor=FakeExecutor(
+            result=ToolResult(success=True, result=tool_result),
+        ),
+        generator=generator,
+    )
+
+    result = pipeline.run("question")
+
+    return result, generator.calls[0]["prompt"]
+
+
+def test_pipeline_handles_integer_too_large_for_str():
+    huge = 10**5000
+
+    result, prompt = run_with_tool_result(huge)
+
+    assert "[value too large to display]" in prompt
+    # The API response still carries the real value.
+    assert result.tool_result == huge
+
+
+def test_pipeline_truncates_long_tool_results_in_prompt():
+    result, prompt = run_with_tool_result("x" * 10_000)
+
+    assert "x" * MAX_PROMPT_VALUE_CHARS in prompt
+    assert "x" * (MAX_PROMPT_VALUE_CHARS + 1) not in prompt
+    assert "[truncated: 10000 characters in total]" in prompt
+
+
+def test_format_for_prompt_keeps_short_values_unchanged():
+    assert format_for_prompt(42) == "42"
+    assert format_for_prompt({"a": 1}) == "{'a': 1}"
