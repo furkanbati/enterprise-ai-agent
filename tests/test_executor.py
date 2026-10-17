@@ -1,3 +1,4 @@
+import logging
 import time
 
 from app.executor import Executor
@@ -392,3 +393,40 @@ def test_execute_keeps_ordinary_tool_errors_retryable():
 
     assert result.success is False
     assert result.retryable is True
+
+
+class RaisingTool(FakeTool):
+    def __init__(self, exception):
+        super().__init__()
+        self.exception = exception
+
+    def execute(self, arguments):
+        raise self.exception
+
+
+def run_and_capture_log(caplog, exception):
+    executor = Executor(FakeRegistry(RaisingTool(exception)), timeout=0.1)
+
+    with caplog.at_level(logging.WARNING, logger="app.executor"):
+        result = executor.execute(
+            ToolCall(tool="calculator", arguments={"expression": "1 / 0"})
+        )
+
+    assert result.success is False
+
+    return [record for record in caplog.records if record.name == "app.executor"]
+
+
+def test_invalid_input_errors_are_logged_without_traceback(caplog):
+    records = run_and_capture_log(caplog, ZeroDivisionError("division by zero"))
+
+    assert [record.levelno for record in records] == [logging.WARNING]
+    assert records[0].exc_info is None
+    assert "division by zero" in records[0].getMessage()
+
+
+def test_unexpected_errors_are_logged_with_traceback(caplog):
+    records = run_and_capture_log(caplog, RuntimeError("bug in tool"))
+
+    assert [record.levelno for record in records] == [logging.ERROR]
+    assert records[0].exc_info is not None
