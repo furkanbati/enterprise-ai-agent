@@ -7,7 +7,7 @@ OLLAMA_HOST = os.getenv(
 
 CHAT_MODEL = os.getenv(
     "CHAT_MODEL",
-    "llama3",
+    "qwen2.5:7b",
 )
 GENERATOR_MAX_RETRIES = int(
     os.getenv("GENERATOR_MAX_RETRIES", "3")

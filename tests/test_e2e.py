@@ -34,6 +34,16 @@ def calculator_call(expression):
     )
 
 
+def step(expression, result=None, error=None):
+    return {
+        "tool": "calculator",
+        "arguments": {"expression": expression},
+        "success": error is None,
+        "result": result,
+        "error": error,
+    }
+
+
 def post_question(monkeypatch, agent, question):
     monkeypatch.setattr(api, "agent", agent)
 
@@ -62,6 +72,7 @@ def test_chat_e2e_with_calculator(monkeypatch):
         },
         "tool_result": 4,
         "error": None,
+        "steps": [step("2 + 2", result=4)],
     }
 
 
@@ -79,6 +90,7 @@ def test_chat_e2e_without_tool(monkeypatch):
         "arguments": None,
         "tool_result": None,
         "error": None,
+        "steps": [],
     }
 
 
@@ -118,6 +130,10 @@ def test_chat_e2e_recovers_after_tool_failure(monkeypatch):
         },
         "tool_result": 5,
         "error": None,
+        "steps": [
+            step("1 / 0", error="division by zero"),
+            step("10 / 2", result=5.0),
+        ],
     }
 
 
@@ -138,4 +154,6 @@ def test_chat_e2e_returns_failure_after_step_limit(monkeypatch):
         },
         "tool_result": None,
         "error": "division by zero",
+        "steps": [step("1 / 0", error="division by zero")]
+        * api.agent.max_steps,
     }

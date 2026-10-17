@@ -310,7 +310,7 @@ docker compose up -d --build
 Download the model inside the Ollama container:
 
 ```powershell
-docker compose exec ollama ollama pull llama3
+docker compose exec ollama ollama pull qwen2.5:7b
 ```
 
 Verify that the containers are running:
@@ -425,7 +425,7 @@ The application is configured through environment variables.
 | Variable              | Default                | Description                       |
 | --------------------- | ---------------------- | --------------------------------- |
 | OLLAMA_HOST           | http://localhost:11434 | Ollama server URL                 |
-| CHAT_MODEL            | llama3                 | Model used for generation         |
+| CHAT_MODEL            | qwen2.5:7b             | Model used for generation         |
 | GENERATOR_MAX_RETRIES | 3                      | Maximum LLM retry attempts        |
 | EXECUTOR_MAX_RETRIES  | 2                      | Maximum tool retry attempts       |
 | PIPELINE_MAX_REPLANS  | 2                      | Maximum replanning attempts       |
@@ -438,7 +438,7 @@ Example:
 
 ```yaml
 environment:
-  CHAT_MODEL: llama3
+  CHAT_MODEL: qwen2.5:7b
   GENERATOR_MAX_RETRIES: 5
   EXECUTOR_MAX_RETRIES: 3
   PIPELINE_MAX_REPLANS: 2

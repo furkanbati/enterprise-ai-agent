@@ -62,12 +62,23 @@ class ChatRequest(BaseModel):
         return question
 
 
+class StepResponse(BaseModel):
+    tool: str
+    arguments: dict
+    success: bool
+    result: object | None = None
+    error: str | None = None
+
+
 class ChatResponse(BaseModel):
     answer: str
+    # The last tool call, kept for clients written for single-tool answers.
     tool: str | None = None
     arguments: dict | None = None
     tool_result: object | None = None
     error: str | None = None
+    # Every tool call made to produce the answer, in order.
+    steps: list[StepResponse] = []
 
 
 registry = ToolRegistry(
@@ -227,6 +238,16 @@ def chat(request: ChatRequest):
         arguments=result.arguments,
         tool_result=result.tool_result,
         error=result.error,
+        steps=[
+            StepResponse(
+                tool=step.tool,
+                arguments=step.arguments,
+                success=step.success,
+                result=step.result,
+                error=step.error,
+            )
+            for step in result.steps
+        ],
     )
 
 

@@ -3,7 +3,7 @@ from fastapi.testclient import TestClient
 from prometheus_client import REGISTRY
 
 from app import api
-from app.models import AgentResult
+from app.models import AgentResult, AgentStep
 
 
 class FailingAgent:
@@ -42,6 +42,14 @@ def test_chat_returns_successful_response(monkeypatch):
         arguments={"expression": "2 + 2"},
         tool_result=4,
         error=None,
+        steps=[
+            AgentStep(
+                tool="calculator",
+                arguments={"expression": "2 + 2"},
+                success=True,
+                result=4,
+            )
+        ],
     )
 
     monkeypatch.setattr(
@@ -64,6 +72,15 @@ def test_chat_returns_successful_response(monkeypatch):
         "arguments": {"expression": "2 + 2"},
         "tool_result": 4,
         "error": None,
+        "steps": [
+            {
+                "tool": "calculator",
+                "arguments": {"expression": "2 + 2"},
+                "success": True,
+                "result": 4,
+                "error": None,
+            }
+        ],
     }
 
 
