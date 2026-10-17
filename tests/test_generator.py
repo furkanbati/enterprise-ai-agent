@@ -2,6 +2,8 @@ import httpx
 import pytest
 from ollama import ResponseError
 
+import app.generator as generator_module
+from app.config import GENERATOR_TIMEOUT
 from app.generator import Generator
 
 
@@ -593,3 +595,17 @@ def test_generate_logs_failure_after_retries(caplog):
     )
 
     assert "in " in caplog.text
+
+def test_generator_uses_configured_timeout_by_default(monkeypatch):
+    captured = {}
+
+    def fake_client(**kwargs):
+        captured.update(kwargs)
+        return object()
+
+    monkeypatch.setattr(generator_module, "Client", fake_client)
+
+    generator = Generator(host="http://fake", model="fake-model")
+
+    assert generator.timeout == GENERATOR_TIMEOUT
+    assert captured == {"host": "http://fake", "timeout": GENERATOR_TIMEOUT}

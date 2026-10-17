@@ -425,6 +425,7 @@ The application is configured through environment variables.
 | PIPELINE_MAX_REPLANS  | 2                      | Maximum replanning attempts       |
 | RETRY_BASE_DELAY      | 1.0                    | Initial retry delay in seconds    |
 | TOOL_TIMEOUT          | 5.0                    | Tool execution timeout in seconds |
+| GENERATOR_TIMEOUT     | 120.0                  | LLM request timeout in seconds    |
 
 Example:
 

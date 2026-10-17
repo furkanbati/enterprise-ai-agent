@@ -31,6 +31,11 @@ TOOL_TIMEOUT = float(
     os.getenv("TOOL_TIMEOUT", "5.0")
 )
 
+
+GENERATOR_TIMEOUT = float(
+    os.getenv("GENERATOR_TIMEOUT", "120.0")
+)
+
 if EXECUTOR_MAX_RETRIES < 0:
     raise ValueError("EXECUTOR_MAX_RETRIES must be zero or greater.")
 if PIPELINE_MAX_REPLANS < 0:
@@ -39,6 +44,9 @@ if GENERATOR_MAX_RETRIES < 0:
     raise ValueError("GENERATOR_MAX_RETRIES must be zero or greater.")
 if TOOL_TIMEOUT < 0:
     raise ValueError("TOOL_TIMEOUT must be zero or greater.")
+
+if GENERATOR_TIMEOUT <= 0:
+    raise ValueError("GENERATOR_TIMEOUT must be greater than zero.")
 
 if RETRY_BASE_DELAY < 0:
     raise ValueError("RETRY_BASE_DELAY must be zero or greater.")

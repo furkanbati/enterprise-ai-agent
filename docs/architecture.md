@@ -309,6 +309,7 @@ PIPELINE_MAX_REPLANS
 
 RETRY_BASE_DELAY
 TOOL_TIMEOUT
+GENERATOR_TIMEOUT
 ```
 
 Configuration is validated during startup.

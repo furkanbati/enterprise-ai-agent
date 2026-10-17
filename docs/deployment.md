@@ -328,6 +328,7 @@ The API configuration is controlled through environment variables.
 | `PIPELINE_MAX_REPLANS`  | `2`                      | Replanning limit       |
 | `RETRY_BASE_DELAY`      | `1.0`                    | Initial retry delay    |
 | `TOOL_TIMEOUT`          | `5.0`                    | Tool execution timeout |
+| `GENERATOR_TIMEOUT`     | `120.0`                  | LLM request timeout    |
 
 Inside Docker Compose, the API overrides the Ollama endpoint with:
 

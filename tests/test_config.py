@@ -75,6 +75,22 @@ def test_rejects_empty_string_settings(name):
     assert f"{name} cannot be empty." in result.stderr
 
 
+@pytest.mark.parametrize("value", ["0", "-1"])
+def test_rejects_non_positive_generator_timeout(value):
+    environment = os.environ | {"GENERATOR_TIMEOUT": value}
+
+    result = subprocess.run(
+        [sys.executable, "-c", "import app.config"],
+        env=environment,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert result.returncode != 0
+    assert "GENERATOR_TIMEOUT must be greater than zero." in result.stderr
+
+
 @pytest.mark.parametrize(
     ("name", "value"),
     [
@@ -83,6 +99,7 @@ def test_rejects_empty_string_settings(name):
         ("PIPELINE_MAX_REPLANS", "-1"),
         ("RETRY_BASE_DELAY", "-1"),
         ("TOOL_TIMEOUT", "-1"),
+        ("GENERATOR_TIMEOUT", "0"),
         ("OLLAMA_HOST", ""),
         ("CHAT_MODEL", ""),
     ],
