@@ -1,0 +1,21 @@
+{"id": "no_tool_greeting", "category": "no_tool", "question": "Say hello in Turkish.", "answer_contains": ["merhaba"]}
+{"id": "no_tool_capital", "category": "no_tool", "question": "What is the capital of France?", "answer_contains": ["paris"]}
+{"id": "no_tool_definition", "category": "no_tool", "question": "Explain in one sentence what an API is."}
+{"id": "calc_percentage", "category": "single_tool", "question": "What is 15% of 2480?", "required_tools": ["calculator"], "answer_number": 372}
+{"id": "calc_multiplication", "category": "single_tool", "question": "What is 1234 * 5678?", "required_tools": ["calculator"], "answer_number": 7006652}
+{"id": "calc_square_root", "category": "single_tool", "question": "What is the square root of 2025?", "required_tools": ["calculator"], "answer_number": 45}
+{"id": "calc_parentheses", "category": "single_tool", "question": "What is (17 + 25) * 3?", "required_tools": ["calculator"], "answer_number": 126}
+{"id": "calc_division", "category": "single_tool", "question": "Divide 1000 by 8.", "required_tools": ["calculator"], "answer_number": 125}
+{"id": "date_today", "category": "date", "question": "What is today's date?", "required_tools": ["datetime"], "answer_contains": ["2026-10-17", "october 17", "17 october", "17.10.2026"]}
+{"id": "date_year", "category": "date", "question": "What year is it?", "required_tools": ["datetime"], "answer_contains": ["2026"]}
+{"id": "date_weekday", "category": "date", "question": "What day of the week is it today?", "required_tools": ["datetime"], "answer_contains": ["saturday"]}
+{"id": "chain_new_years_eve", "category": "chain", "question": "How many days are left until New Year's Eve this year?", "required_tools": ["datetime"], "allowed_tools": ["calculator"], "answer_number": 75}
+{"id": "chain_christmas", "category": "chain", "question": "How many days until Christmas?", "required_tools": ["datetime"], "allowed_tools": ["calculator"], "answer_number": 69}
+{"id": "chain_hours_left", "category": "chain", "question": "How many hours are left until the end of today (UTC)?", "required_tools": ["datetime"], "allowed_tools": ["calculator"], "answer_number": 15}
+{"id": "chain_future_year", "category": "chain", "question": "What year will it be 25 years from now?", "required_tools": ["datetime"], "allowed_tools": ["calculator"], "answer_number": 2051}
+{"id": "multi_square_root_of_result", "category": "multi_step", "question": "What is (17 + 25) * 3, and what is the square root of the result?", "required_tools": ["calculator"], "answer_number": 11.22, "tolerance": 0.01}
+{"id": "multi_vat_rounding", "category": "multi_step", "question": "Add 15% VAT to 2480 and round the result to the nearest whole number.", "required_tools": ["calculator"], "answer_number": 2852}
+{"id": "correct_caret_power", "category": "self_correction", "question": "What is 2^10? Write the expression exactly as 2^10.", "required_tools": ["calculator"], "answer_number": 1024}
+{"id": "correct_caret_small", "category": "self_correction", "question": "Calculate 3^4 using the caret notation exactly as written: 3^4.", "required_tools": ["calculator"], "answer_number": 81}
+{"id": "reject_huge_power_of_two", "category": "rejection", "question": "What is 2 to the power of 5000000?", "required_tools": ["calculator"], "expect_rejection": true}
+{"id": "reject_huge_power_of_ten", "category": "rejection", "question": "What is the exact value of 10 to the power of 2000?", "required_tools": ["calculator"], "expect_rejection": true}

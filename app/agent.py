@@ -189,6 +189,7 @@ class Agent:
                 success=result.success,
                 result=result.result if result.success else None,
                 error=None if result.success else result.error,
+                rejected=not result.retryable,
             )
         )
 

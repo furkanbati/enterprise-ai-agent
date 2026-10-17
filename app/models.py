@@ -68,6 +68,8 @@ class AgentStep:
     success: bool
     result: Any = None
     error: str | None = None
+    # True when the tool refused the request with ToolRequestRejected.
+    rejected: bool = False
 
 
 @dataclass
