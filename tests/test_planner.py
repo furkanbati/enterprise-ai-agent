@@ -199,3 +199,103 @@ def test_plan_replans_after_previous_tool_failure():
     assert "10 / 0" in (
         planner.generator.last_kwargs["prompt"]
     )
+
+class SequenceGenerator:
+    def __init__(self, responses):
+        self.responses = list(responses)
+        self.calls = []
+
+    def generate(self, **kwargs):
+        self.calls.append(kwargs)
+        return self.responses.pop(0)
+
+
+VALID_CALCULATOR_RESPONSE = (
+    '{"tool": "calculator", "arguments": {"expression": "2 + 2"}}'
+)
+
+
+@pytest.mark.parametrize(
+    ("invalid_response", "expected_error"),
+    [
+        ("{", "Planner returned invalid JSON"),
+        ('{"tool": null, "arguments": {}, "x": 1}', "invalid structure"),
+        ('{"tool": "weather", "arguments": {}}', "unknown tool: weather"),
+    ],
+)
+def test_plan_retries_with_error_feedback(invalid_response, expected_error):
+    generator = SequenceGenerator(
+        [invalid_response, VALID_CALCULATOR_RESPONSE]
+    )
+    planner = Planner(
+        generator=generator,
+        registry=FakeRegistry(),
+        max_retries=1,
+    )
+
+    result = planner.plan("What is 2 + 2?")
+
+    assert result == ToolCall(
+        tool="calculator",
+        arguments={"expression": "2 + 2"},
+    )
+    assert len(generator.calls) == 2
+
+    correction_prompt = generator.calls[1]["prompt"]
+    assert "What is 2 + 2?" in correction_prompt
+    assert expected_error in correction_prompt
+    assert invalid_response in correction_prompt
+    assert generator.calls[1]["json_mode"] is True
+
+
+def test_plan_raises_after_retries_are_exhausted():
+    generator = SequenceGenerator(["{", "{", "{"])
+    planner = Planner(
+        generator=generator,
+        registry=FakeRegistry(),
+        max_retries=2,
+    )
+
+    with pytest.raises(ValueError, match="Planner returned invalid JSON"):
+        planner.plan("test")
+
+    assert len(generator.calls) == 3
+
+
+def test_plan_does_not_retry_when_retries_are_disabled():
+    generator = SequenceGenerator(["{", VALID_CALCULATOR_RESPONSE])
+    planner = Planner(
+        generator=generator,
+        registry=FakeRegistry(),
+        max_retries=0,
+    )
+
+    with pytest.raises(ValueError, match="Planner returned invalid JSON"):
+        planner.plan("test")
+
+    assert len(generator.calls) == 1
+
+
+def test_unknown_tool_error_lists_available_tools():
+    planner = Planner(
+        generator=FakeGenerator('{"tool": "weather", "arguments": {}}'),
+        registry=FakeRegistry(),
+        max_retries=0,
+    )
+
+    with pytest.raises(ValueError, match="Available tools: calculator"):
+        planner.plan("weather")
+
+
+def test_plan_truncates_long_invalid_response_in_correction_prompt():
+    long_response = "x" * 5_000
+    generator = SequenceGenerator([long_response, VALID_CALCULATOR_RESPONSE])
+    planner = Planner(
+        generator=generator,
+        registry=FakeRegistry(),
+        max_retries=1,
+    )
+
+    planner.plan("test")
+
+    assert "x" * 1_001 not in generator.calls[1]["prompt"]

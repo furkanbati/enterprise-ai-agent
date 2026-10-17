@@ -427,6 +427,7 @@ The application is configured through environment variables.
 | GENERATOR_MAX_RETRIES | 3                      | Maximum LLM retry attempts        |
 | EXECUTOR_MAX_RETRIES  | 2                      | Maximum tool retry attempts       |
 | PIPELINE_MAX_REPLANS  | 2                      | Maximum replanning attempts       |
+| PLANNER_MAX_RETRIES   | 1                      | Retries for invalid planner output |
 | RETRY_BASE_DELAY      | 1.0                    | Initial retry delay in seconds    |
 | TOOL_TIMEOUT          | 5.0                    | Tool execution timeout in seconds |
 | GENERATOR_TIMEOUT     | 120.0                  | LLM request timeout in seconds    |

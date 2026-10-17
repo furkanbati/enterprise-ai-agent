@@ -21,6 +21,10 @@ PIPELINE_MAX_REPLANS = int(
     os.getenv("PIPELINE_MAX_REPLANS", "2")
 )
 
+PLANNER_MAX_RETRIES = int(
+    os.getenv("PLANNER_MAX_RETRIES", "1")
+)
+
 
 RETRY_BASE_DELAY = float(
     os.getenv("RETRY_BASE_DELAY", "1.0")
@@ -40,6 +44,8 @@ if EXECUTOR_MAX_RETRIES < 0:
     raise ValueError("EXECUTOR_MAX_RETRIES must be zero or greater.")
 if PIPELINE_MAX_REPLANS < 0:
     raise ValueError("PIPELINE_MAX_REPLANS must be zero or greater.")
+if PLANNER_MAX_RETRIES < 0:
+    raise ValueError("PLANNER_MAX_RETRIES must be zero or greater.")
 if GENERATOR_MAX_RETRIES < 0:
     raise ValueError("GENERATOR_MAX_RETRIES must be zero or greater.")
 if TOOL_TIMEOUT < 0:
