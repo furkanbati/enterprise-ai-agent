@@ -561,7 +561,7 @@ def test_generate_logs_retry_attempt(caplog):
     assert result == "success"
 
     assert (
-        "Generator connection failed on attempt 1/3"
+        "Generator connection failed on attempt 1/3: connection failed"
         in caplog.text
     )
 

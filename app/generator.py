@@ -136,9 +136,10 @@ class Generator:
 
             except ConnectionError as exc:
                 logger.warning(
-                    "Generator connection failed on attempt %s/%s",
+                    "Generator connection failed on attempt %s/%s: %s",
                     attempt_number,
                     total_attempts,
+                    exc,
                 )
 
                 if attempt >= self.max_retries:
