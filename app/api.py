@@ -22,6 +22,7 @@ from app.logging import (
 from app.models import AgentResult
 from app.tool_registry import ToolRegistry
 from tools.calculator import CalculatorTool
+from tools.date_diff import DateDiffTool
 from tools.datetime_tool import DateTimeTool
 
 
@@ -85,6 +86,7 @@ registry = ToolRegistry(
     [
         CalculatorTool(),
         DateTimeTool(),
+        DateDiffTool(),
     ]
 )
 

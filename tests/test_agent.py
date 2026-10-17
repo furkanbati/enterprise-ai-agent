@@ -247,6 +247,7 @@ def test_withdraws_tools_after_a_rejected_request():
     assert result.answer == "That result is too large to calculate."
     assert result.error == "Result exceeds 1000 digits."
     assert result.tool_result is None
+    assert result.steps[0].rejected is True
 
     final_call = generator.calls[1]
     assert final_call["tools"] is None

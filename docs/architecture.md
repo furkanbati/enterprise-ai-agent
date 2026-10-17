@@ -229,9 +229,19 @@ Verifies that Ollama is reachable and the configured model is available.
 
 Evaluates arithmetic expressions with a restricted evaluator: numbers, `+ - * / // % **`, parentheses, `abs`, `round`, `min`, `max`, `int`, `float`, `sqrt`, `pi` and `e`. Integer results above 1,000 digits are rejected with `ToolRequestRejected`.
 
+### DateDiff
+
+Returns the number of days between two `YYYY-MM-DD` dates. Invalid dates return a fixable error with an example of the expected format.
+
 ### DateTime
 
-Returns the current UTC date and time.
+Returns the current UTC date and time with the day of the week:
+
+```json
+{"datetime": "2026-10-17T09:00:00+00:00", "weekday": "Saturday"}
+```
+
+The weekday is computed by the tool. When the tool returned only the timestamp, the model named the wrong weekday in every evaluation run.
 
 ---
 

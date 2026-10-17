@@ -191,9 +191,25 @@ Supported: numbers, `+ - * / // % **`, parentheses, `abs`, `round`, `min`, `max`
 
 Integer results are limited to 1,000 digits. Oversized operations are rejected before they are computed, so a single expression cannot occupy a CPU core.
 
+## DateDiff
+
+Returns the number of days between two `YYYY-MM-DD` dates, negative if the end date is earlier.
+
+```json
+{"tool": "date_diff", "arguments": {"start": "2026-10-17", "end": "2026-12-25"}}
+```
+
+Result: `69`. It was added after the evaluation showed the model counting days itself and getting them wrong.
+
 ## DateTime
 
-Returns the current UTC date and time.
+Returns the current UTC date and time with the day of the week:
+
+```json
+{"datetime": "2026-10-17T09:00:00+00:00", "weekday": "Saturday"}
+```
+
+The weekday is computed by the tool. When the tool returned only the timestamp, the model named the wrong weekday in every evaluation run.
 
 New tools implement the `Tool` interface in `tools/base.py` and are added to the registry; their JSON Schema is sent to the model automatically.
 
@@ -469,11 +485,20 @@ enterprise-ai-agent/
 ├── tools/
 │   ├── base.py             Tool interface
 │   ├── calculator.py       Calculator tool
+│   ├── date_diff.py        Days between two dates
 │   └── datetime_tool.py    Date and time tool
 │
 ├── docs/
 │   ├── architecture.md
 │   └── deployment.md
+│
+├── evaluation/
+│   ├── datasets/           Labelled evaluation cases
+│   ├── results/            Evaluation reports per model
+│   ├── checks.py           Tool, answer and verification checks
+│   ├── runner.py           Repeated runs and aggregation
+│   ├── report.py           Markdown and JSON reports
+│   └── tools.py            Fixed-clock datetime tool
 │
 ├── tests/
 │   ├── test_agent.py
@@ -482,6 +507,8 @@ enterprise-ai-agent/
 │   ├── test_config.py
 │   ├── test_datetime_tool.py
 │   ├── test_e2e.py
+│   ├── test_evaluation_checks.py
+│   ├── test_evaluation_runner.py
 │   ├── test_executor.py
 │   ├── test_generator.py
 │   ├── test_models.py
@@ -518,10 +545,95 @@ The architecture is designed so these capabilities can be introduced as addition
 
 ---
 
+# Evaluation
+
+The `evaluation/` package measures the agent against labelled cases with a real model, so changes to tools, prompts or models can be compared with numbers.
+
+The bundled dataset, [`evaluation/datasets/agent_cases.jsonl`](evaluation/datasets/agent_cases.jsonl), has 21 cases in seven categories: no tool needed, single tool, date questions, chained tools, multi-step calculations, self-correction and rejected requests. Each case is run several times, because the same question can pass in one run and fail in the next.
+
+During evaluation the `datetime` tool is replaced by one that always reports `2026-10-17T09:00:00Z`, so answers such as "69 days until Christmas" stay stable.
+
+### Metrics
+
+- **Pass:** tool selection and the answer check both pass
+- **Tool selection:** every required tool is called and no tool outside the allowed set
+- **Answer:** the expected number appears in the answer (within a tolerance), or one of the expected phrases does; for rejection cases, a tool rejected the request and nothing succeeded afterwards
+- **Tool-verified:** the expected number was produced by a tool, not stated by the model
+
+### Running the evaluation
+
+With Ollama running and the model pulled:
+
+```powershell
+docker compose exec agent-api python -m evaluation
+docker compose exec agent-api python -m evaluation --model llama3.1:8b --repeats 5
+docker compose exec agent-api python -m evaluation --categories chain date
+```
+
+Reports are written to `evaluation/results/<model>.md` and `.json`, including a trace of the first failing run of each case. Inside the container they are not on a mounted volume; copy them out with:
+
+```powershell
+docker compose cp agent-api:/app/evaluation/results ./evaluation/
+```
+
+### Results: qwen2.5:7b
+
+21 cases, 3 runs each, after each change. Reports: [baseline](evaluation/results/qwen2.5-7b-baseline.md), [+ weekday](evaluation/results/qwen2.5-7b-weekday.md), [+ date_diff](evaluation/results/qwen2.5-7b.md).
+
+| Category | Baseline | + weekday in datetime | + date_diff tool |
+|---|---|---|---|
+| **Overall pass** | 73% | 81% | **86%** |
+| **Overall tool-verified** | 51% | 59% | **74%** |
+| No tool | 100% | 100% | 100% |
+| Single tool | 100% | 100% | 100% |
+| Date | 67% | 89% | 78% |
+| Chained tools | 17% | 33% | **67%** |
+| Chained tools, tool-verified | 0% | 0% | **50%** |
+| Multi-step | 83% | 100% | 100% |
+| Self-correction | 100% | 100% | 100% |
+| Rejection | 50% | 50% | 50% |
+
+Each column changes one thing. The effects that can be attributed to a change:
+
+- **Weekday in the datetime result:** the weekday question went from 0/3 to 3/3. Before, the model named the wrong day in every run (Sunday, Friday, Friday).
+- **`date_diff` tool:** the two day-count questions went from 0/3 and 1/3 to 3/3 each. In those runs the model called `datetime` and then `date_diff` with the right dates, so the answers are tool-verified instead of the model's own arithmetic ("89 days until Christmas" before, 69 now). The model did not call `date_diff` for any other case. A later run with 5 repeats per case (see below) puts the day-count pass rate at 7/10, so the tool is a clear improvement but not a guarantee.
+
+With 3 runs per case a single run moves a case by 33 points, so smaller differences are within run-to-run variation.
+
+### Tried and rejected: a prompt rule for the date
+
+The model sometimes answered "2023" for "What year is it?" without calling `datetime`. A system-prompt rule was tested to address it:
+
+> The datetime tool returns the real current date and time. Call it for any question about the current date, day or year, and trust its result even if it is later than you would expect from your training data.
+
+The full evaluation looked positive at first: "What year is it?" went from 1/3 to 3/3 and overall pass rose from 86% to 89% ([report](evaluation/results/qwen2.5-7b-trust-prompt.md)). Tool-verified answers fell from 74% to 64%, though, so the date and chain cases were rerun with 5 repeats each, with and without the rule ([without](evaluation/results/targeted-date-chain-prompt-b.md), [with](evaluation/results/targeted-date-chain-prompt-c.md)):
+
+| Date and chain cases, 5 runs each | Without the rule | With the rule |
+|---|---|---|
+| "What year is it?" | 4/5 | 4/5 |
+| Day-count cases | 7/10 | 3/10 |
+| `date_diff` used in day-count cases | 7/10 | 3/10 |
+| Chain cases, tool-verified | 35% | 15% |
+
+The improvement on the year question was run-to-run variation; with more runs both prompts score 4/5. The cost was real: the rule pushed the model towards repeated `datetime` calls, sometimes until the step limit, and away from `date_diff`. The rule was not adopted.
+
+What the evaluation shows:
+
+- **Simple tool use is reliable.** Every single-tool calculation passed, and every answer came from the calculator.
+- **The model guesses what the tools do not provide.** Weekdays and date differences were wrong until a tool returned them. Adding a small tool helped more than asking the model to reason, and more than a prompt rule.
+- **The model does not fully trust the tools' date.** For "What year is it?" it sometimes answers "2023" without calling `datetime` (4/5 passing with 5 runs), and some "25 years from now" answers start with "If today is October 17, 2023". A prompt rule against this did not help (see below).
+- **Time-of-day arithmetic is still unsolved.** "How many hours are left until the end of today?" passed 0/3 in the last run; no tool covers it and the model answered "no hours left".
+- **Correct is not the same as verified.** Self-correction cases pass every time, but in half of the runs the model states the corrected value after the error instead of calling the calculator again.
+- **The rejection safeguard works when it is reached.** `2 ** 5000000` was rejected and explained in every run. For `10 ** 2000` the model wrote `10^2000`, got a fixable error, and stopped instead of retrying, so the request never reached the size limit.
+
+The answer checks are lexical: a case passes if the expected number appears anywhere in the answer. The dataset is small and hand-written, so the results are a regression baseline for this project, not a general benchmark.
+
+---
+
 # Known Limitations
 
-* **Model reasoning.** The loop supports chaining tools, and this is covered by tests, but a 7B model does not always use it. In local runs `qwen2.5:7b` tended to do date arithmetic itself after calling `datetime` instead of passing the dates to the calculator, and answered "How many days are left until New Year's Eve?" inconsistently. A larger model or a dedicated date tool would help; an evaluation suite would measure it.
-* **Unverified final steps.** After a tool error, the model sometimes states the corrected result without calling the tool again. Its answers for `2^10` were correct, but the value was not computed by the tool in that run.
+* **Model reasoning.** The loop supports chaining tools, and this is covered by tests, but `qwen2.5:7b` rarely uses it: chained-tool cases pass 67% of the time (see Evaluation), and questions that need time-of-day arithmetic still fail. Day counts became reliable once a `date_diff` tool existed; without a matching tool the model still does the arithmetic itself.
+* **Unverified final steps.** After a tool error, the model often states the corrected result without calling the tool again; only half of the self-correction runs were tool-verified.
 * **Thread-based timeouts.** A timed-out tool keeps running in its worker thread. Tools bound their own work, but full isolation would need a separate process per call.
 
 ---
@@ -536,7 +648,7 @@ Possible next steps include:
 * Conversation memory
 * Streaming responses
 * Tracing and observability
-* An evaluation suite for tool selection and answer accuracy
+* Model comparison with the evaluation suite
 * Process-isolated tool execution
 
 ---
