@@ -1,4 +1,4 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any
 
 from pydantic import BaseModel, ConfigDict, model_validator
@@ -23,6 +23,22 @@ class PlannerResponse(BaseModel):
             )
 
         return self
+
+
+@dataclass
+class ChatToolCall:
+    """A tool call requested by the model through native tool calling."""
+
+    name: str
+    arguments: dict[str, Any]
+
+
+@dataclass
+class ChatMessage:
+    """An assistant message: text content and/or requested tool calls."""
+
+    content: str
+    tool_calls: list[ChatToolCall] = field(default_factory=list)
 
 
 @dataclass

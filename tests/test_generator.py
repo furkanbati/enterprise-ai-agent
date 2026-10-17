@@ -5,6 +5,7 @@ from ollama import ResponseError
 import app.generator as generator_module
 from app.config import GENERATOR_TIMEOUT
 from app.generator import Generator
+from app.models import ChatMessage, ChatToolCall
 
 
 class FakeMessage:
@@ -609,3 +610,142 @@ def test_generator_uses_configured_timeout_by_default(monkeypatch):
 
     assert generator.timeout == GENERATOR_TIMEOUT
     assert captured == {"host": "http://fake", "timeout": GENERATOR_TIMEOUT}
+
+
+TOOLS = [
+    {
+        "type": "function",
+        "function": {
+            "name": "calculator",
+            "description": "Evaluates a mathematical expression.",
+            "parameters": {"type": "object", "properties": {}},
+        },
+    }
+]
+
+
+def chat_response(content="", tool_calls=None):
+    return {
+        "message": {
+            "role": "assistant",
+            "content": content,
+            "tool_calls": tool_calls,
+        }
+    }
+
+
+def test_chat_sends_messages_and_tools():
+    client = FakeClient(responses=[chat_response(content="Hello!")])
+    generator = create_generator(client)
+    messages = [{"role": "user", "content": "Hi"}]
+
+    message = generator.chat(messages, tools=TOOLS)
+
+    assert message == ChatMessage(content="Hello!", tool_calls=[])
+    assert client.calls[0] == {
+        "model": "fake-model",
+        "messages": messages,
+        "tools": TOOLS,
+    }
+
+
+def test_chat_parses_tool_calls():
+    client = FakeClient(
+        responses=[
+            chat_response(
+                tool_calls=[
+                    {
+                        "function": {
+                            "name": "calculator",
+                            "arguments": {"expression": "2 + 2"},
+                        }
+                    },
+                    {
+                        "function": {
+                            "name": "datetime",
+                            "arguments": '{"zone": "UTC"}',
+                        }
+                    },
+                ]
+            )
+        ]
+    )
+
+    message = create_generator(client).chat([], tools=TOOLS)
+
+    assert message.content == ""
+    assert message.tool_calls == [
+        ChatToolCall(name="calculator", arguments={"expression": "2 + 2"}),
+        ChatToolCall(name="datetime", arguments={"zone": "UTC"}),
+    ]
+
+
+def test_chat_parses_ollama_message_objects():
+    from ollama import ChatResponse, Message
+
+    response = ChatResponse(
+        message=Message(
+            role="assistant",
+            content="",
+            tool_calls=[
+                Message.ToolCall(
+                    function=Message.ToolCall.Function(
+                        name="calculator",
+                        arguments={"expression": "6 * 7"},
+                    )
+                )
+            ],
+        )
+    )
+
+    message = create_generator(FakeClient(responses=[response])).chat([])
+
+    assert message.tool_calls == [
+        ChatToolCall(name="calculator", arguments={"expression": "6 * 7"}),
+    ]
+
+
+@pytest.mark.parametrize(
+    ("response", "error"),
+    [
+        (chat_response(content="  "), "empty response"),
+        ({}, "missing message"),
+        (
+            chat_response(tool_calls=[{"function": {"arguments": {}}}]),
+            "without a name",
+        ),
+        (
+            chat_response(
+                tool_calls=[
+                    {"function": {"name": "calculator", "arguments": "{"}}
+                ]
+            ),
+            "invalid JSON arguments",
+        ),
+        (
+            chat_response(
+                tool_calls=[
+                    {"function": {"name": "calculator", "arguments": [1]}}
+                ]
+            ),
+            "must be an object",
+        ),
+    ],
+)
+def test_chat_rejects_invalid_responses(response, error):
+    generator = create_generator(FakeClient(responses=[response]))
+
+    with pytest.raises(ValueError, match=error):
+        generator.chat([])
+
+
+def test_chat_retries_connection_errors():
+    client = FakeClient(
+        responses=[chat_response(content="ok")],
+        errors=[ConnectionError("down")],
+    )
+
+    message = create_generator(client).chat([])
+
+    assert message.content == "ok"
+    assert len(client.calls) == 2
