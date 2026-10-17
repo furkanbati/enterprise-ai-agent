@@ -2,6 +2,7 @@ import time
 
 import pytest
 
+from tools.base import ToolRequestRejected
 from tools.calculator import CalculatorTool
 
 
@@ -92,3 +93,16 @@ def test_calculator_allows_results_up_to_the_limit():
 def test_calculator_rejects_non_arithmetic_operations(expression):
     with pytest.raises(ValueError, match="Unsupported expression"):
         CalculatorTool().execute({"expression": expression})
+
+
+def test_size_limit_is_reported_as_rejected_request():
+    with pytest.raises(ToolRequestRejected):
+        CalculatorTool().execute({"expression": "2 ** 5000000"})
+
+
+def test_unsupported_expression_is_not_a_rejected_request():
+    # A malformed expression can be corrected by replanning.
+    with pytest.raises(ValueError) as exc_info:
+        CalculatorTool().execute({"expression": "2 ^ 3"})
+
+    assert not isinstance(exc_info.value, ToolRequestRejected)

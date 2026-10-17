@@ -353,6 +353,8 @@ Failures are converted into structured results instead of propagating unhandled 
 
 Planner-driven replanning allows the system to recover from some tool failures.
 
+Replanning is skipped when a tool raises `ToolRequestRejected`, meaning the request was understood but cannot be fulfilled, for example a calculation whose result exceeds the size limit. Replanning such a request can only succeed by changing what the user asked for; in testing, llama3 rewrote `2 ** 5000000` as `2 ** 10` and answered `1024`. The pipeline instead explains the failure to the user.
+
 ---
 
 ## Health Monitoring

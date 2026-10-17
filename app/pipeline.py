@@ -101,6 +101,15 @@ class Pipeline:
                     tool_result=tool_result.result,
                 )
 
+            if not tool_result.retryable:
+                # Replanning could only succeed by changing what the user
+                # asked for, e.g. turning "2 ** 5000000" into "2 ** 10".
+                logger.warning(
+                    "Tool '%s' rejected the request, not replanning",
+                    tool_call.tool,
+                )
+                break
+
             if attempt >= PIPELINE_MAX_REPLANS:
                 logger.error(
                     "Pipeline reached maximum replans"

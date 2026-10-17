@@ -2,6 +2,7 @@ import time
 
 from app.executor import Executor
 from app.models import ToolCall
+from tools.base import ToolRequestRejected
 
 
 class FakeTool:
@@ -354,3 +355,40 @@ def test_execute_does_not_retry_non_retryable_error():
     assert result.attempts == 1
     assert result.execution_time > 0
     assert tool.call_count == 1
+
+class RejectingTool(FakeTool):
+    def execute(self, arguments):
+        self.call_count += 1
+        raise ToolRequestRejected("Result exceeds 1000 digits.")
+
+
+def test_execute_marks_rejected_requests_as_not_retryable():
+    tool = RejectingTool()
+    executor = Executor(
+        FakeRegistry(tool),
+        timeout=0.1,
+        max_retries=2,
+    )
+
+    result = executor.execute(
+        ToolCall(tool="calculator", arguments={"expression": "2 ** 5000000"})
+    )
+
+    assert result.success is False
+    assert result.retryable is False
+    assert result.error == "Result exceeds 1000 digits."
+    assert tool.call_count == 1
+
+
+def test_execute_keeps_ordinary_tool_errors_retryable():
+    executor = Executor(
+        FakeRegistry(FakeTool(error="bad expression")),
+        timeout=0.1,
+    )
+
+    result = executor.execute(
+        ToolCall(tool="calculator", arguments={"expression": "2 ^ 3"})
+    )
+
+    assert result.success is False
+    assert result.retryable is True

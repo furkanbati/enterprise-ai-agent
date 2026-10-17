@@ -504,3 +504,33 @@ def test_pipeline_truncates_long_tool_results_in_prompt():
 def test_format_for_prompt_keeps_short_values_unchanged():
     assert format_for_prompt(42) == "42"
     assert format_for_prompt({"a": 1}) == "{'a': 1}"
+
+
+def test_pipeline_does_not_replan_rejected_requests():
+    planner = FakePlanner(
+        tool_call=ToolCall(
+            tool="calculator",
+            arguments={"expression": "2 ** 5000000"},
+        ),
+    )
+    generator = FakeGenerator(answer="That number is too large.")
+
+    pipeline = Pipeline(
+        planner=planner,
+        executor=FakeExecutor(
+            ToolResult(
+                success=False,
+                error="Result exceeds 1000 digits.",
+                retryable=False,
+            )
+        ),
+        generator=generator,
+    )
+
+    result = pipeline.run("What is 2 to the power of 5000000?")
+
+    # Planned once; no replan that could change the user's numbers.
+    assert len(planner.calls) == 1
+    assert result.error == "Result exceeds 1000 digits."
+    assert result.tool_result is None
+    assert "Result exceeds 1000 digits." in generator.calls[0]["prompt"]

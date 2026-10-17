@@ -5,7 +5,7 @@ from typing import Any
 
 from simpleeval import InvalidExpression, SimpleEval
 
-from tools.base import Tool
+from tools.base import Tool, ToolRequestRejected
 
 
 # Largest integer result the calculator will produce. Results are bounded
@@ -20,7 +20,7 @@ _TOO_LARGE = f"Result exceeds {MAX_RESULT_DIGITS} digits."
 
 def _check_size(value: Any) -> Any:
     if isinstance(value, int) and value.bit_length() > _MAX_RESULT_BITS:
-        raise ValueError(_TOO_LARGE)
+        raise ToolRequestRejected(_TOO_LARGE)
 
     return value
 
@@ -31,7 +31,7 @@ def _multiply(left: Any, right: Any) -> Any:
         and isinstance(right, int)
         and left.bit_length() + right.bit_length() > _MAX_RESULT_BITS + 1
     ):
-        raise ValueError(_TOO_LARGE)
+        raise ToolRequestRejected(_TOO_LARGE)
 
     return _check_size(left * right)
 
@@ -44,7 +44,7 @@ def _power(base: Any, exponent: Any) -> Any:
         and abs(base) > 1
         and (abs(base).bit_length() - 1) * exponent > _MAX_RESULT_BITS
     ):
-        raise ValueError(_TOO_LARGE)
+        raise ToolRequestRejected(_TOO_LARGE)
 
     return _check_size(base**exponent)
 

@@ -39,6 +39,8 @@ class ToolResult:
     tool: str | None = None
     attempts: int = 0
     execution_time: float = 0.0
+    # False when the failure cannot be fixed by replanning.
+    retryable: bool = True
 
 
 @dataclass

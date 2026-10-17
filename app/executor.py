@@ -12,6 +12,7 @@ from app.config import (
 from app.models import ToolCall, ToolResult
 from app.tool_registry import ToolRegistry
 from app.tool_validator import ToolArgumentValidator
+from tools.base import ToolRequestRejected
 
 
 logger = logging.getLogger(__name__)
@@ -215,6 +216,30 @@ class Executor:
                 )
 
                 time.sleep(delay)
+
+            except ToolRequestRejected as exc:
+                duration = (
+                    time.perf_counter() - start_time
+                )
+
+                logger.warning(
+                    "Tool '%s' rejected the request: %s",
+                    tool_call.tool,
+                    exc,
+                )
+
+                TOOL_FAILURES_TOTAL.labels(
+                    tool=tool_call.tool,
+                ).inc()
+
+                return ToolResult(
+                    success=False,
+                    tool=tool_call.tool,
+                    attempts=attempt + 1,
+                    execution_time=duration,
+                    error=str(exc),
+                    retryable=False,
+                )
 
             except Exception as exc:
                 duration = (

@@ -154,6 +154,8 @@ Answer
 
 The pipeline supports bounded replanning rather than endlessly retrying failed execution.
 
+Replanning is used for failures the model can fix, such as a malformed expression. When a tool rejects a request it cannot fulfil, for example a result that exceeds the calculator's size limit, the pipeline explains the failure instead of replanning, so the model cannot change the user's numbers to produce an answer.
+
 ---
 
 # Components
