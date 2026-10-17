@@ -426,6 +426,8 @@ GitHub Push / Pull Request
           ↓
      Install Dependencies
           ↓
+     Lint (ruff, F)
+          ↓
         Run Tests
           ↓
    Build Docker Image
@@ -433,6 +435,8 @@ GitHub Push / Pull Request
       Build & Push
         to GHCR
 ```
+
+The lint step runs `ruff check .` with the pyflakes rules (`F`) configured in `ruff.toml`: undefined names, unused imports and variables. It does not check style. Run on the code before the request-ID fix, it reports the undefined `get_request_id` that made every unexpected error return an empty 500.
 
 The Docker image is published to GitHub Container Registry after the test job succeeds on the configured main-branch and version-tag pushes.
 
@@ -459,6 +463,7 @@ Tests should be executed in the development environment.
 Example:
 
 ```powershell
+ruff check .
 pytest -q
 ```
 
