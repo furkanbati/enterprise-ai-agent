@@ -246,10 +246,20 @@ class Executor:
                     time.perf_counter() - start_time
                 )
 
-                logger.exception(
-                    "Tool '%s' raised an unexpected exception",
-                    tool_call.tool,
-                )
+                if isinstance(exc, (ValueError, ArithmeticError)):
+                    # Invalid input such as a malformed expression or a
+                    # division by zero. The error goes back to the model,
+                    # so a traceback would only bury real failures.
+                    logger.warning(
+                        "Tool '%s' failed: %s",
+                        tool_call.tool,
+                        exc,
+                    )
+                else:
+                    logger.exception(
+                        "Tool '%s' raised an unexpected exception",
+                        tool_call.tool,
+                    )
 
                 TOOL_FAILURES_TOTAL.labels(
                     tool=tool_call.tool,

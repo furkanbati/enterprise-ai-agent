@@ -9,6 +9,7 @@ from ollama import ResponseError
 from prometheus_client import Counter, Histogram, make_asgi_app
 from pydantic import BaseModel, Field, field_validator
 
+from app.agent import Agent
 from app.executor import Executor
 from app.generator import Generator
 from app.logging import (
@@ -19,8 +20,6 @@ from app.logging import (
     set_request_id,
 )
 from app.models import AgentResult
-from app.pipeline import Pipeline
-from app.planner import Planner
 from app.tool_registry import ToolRegistry
 from tools.calculator import CalculatorTool
 from tools.datetime_tool import DateTimeTool
@@ -63,12 +62,23 @@ class ChatRequest(BaseModel):
         return question
 
 
+class StepResponse(BaseModel):
+    tool: str
+    arguments: dict
+    success: bool
+    result: object | None = None
+    error: str | None = None
+
+
 class ChatResponse(BaseModel):
     answer: str
+    # The last tool call, kept for clients written for single-tool answers.
     tool: str | None = None
     arguments: dict | None = None
     tool_result: object | None = None
     error: str | None = None
+    # Every tool call made to produce the answer, in order.
+    steps: list[StepResponse] = []
 
 
 registry = ToolRegistry(
@@ -79,13 +89,12 @@ registry = ToolRegistry(
 )
 
 generator = Generator()
-planner = Planner(generator, registry)
 executor = Executor(registry)
 
-pipeline = Pipeline(
-    planner=planner,
-    executor=executor,
+agent = Agent(
     generator=generator,
+    executor=executor,
+    registry=registry,
 )
 
 
@@ -200,7 +209,7 @@ def ready():
 @app.post("/chat", response_model=ChatResponse)
 def chat(request: ChatRequest):
     try:
-        result: AgentResult = pipeline.run(request.question)
+        result: AgentResult = agent.run(request.question)
 
     except ConnectionError as exc:
         logger.exception("AI service connection failed")
@@ -229,6 +238,16 @@ def chat(request: ChatRequest):
         arguments=result.arguments,
         tool_result=result.tool_result,
         error=result.error,
+        steps=[
+            StepResponse(
+                tool=step.tool,
+                arguments=step.arguments,
+                success=step.success,
+                result=step.result,
+                error=step.error,
+            )
+            for step in result.steps
+        ],
     )
 
 

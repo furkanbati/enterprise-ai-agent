@@ -1,66 +1,67 @@
 from fastapi.testclient import TestClient
 
 from app import api
+from app.agent import Agent
 from app.executor import Executor
-from app.pipeline import Pipeline
-from app.planner import Planner
+from app.models import ChatMessage, ChatToolCall
 
 
-class ControlledGenerator:
-    def __init__(self, responses):
-        self.responses = iter(responses)
+class ScriptedGenerator:
+    def __init__(self, messages):
+        self.messages = iter(messages)
 
-    def generate(
-        self,
-        prompt,
-        system_prompt=None,
-        json_mode=False,
-    ):
-        return next(self.responses)
+    def chat(self, messages, tools=None):
+        return next(self.messages)
 
 
-def build_test_pipeline(responses):
-    generator = ControlledGenerator(responses)
-
-    planner = Planner(
-        generator=generator,
+def build_test_agent(messages):
+    return Agent(
+        generator=ScriptedGenerator(messages),
+        executor=Executor(registry=api.registry),
         registry=api.registry,
     )
 
-    executor = Executor(
-        registry=api.registry,
+
+def calculator_call(expression):
+    return ChatMessage(
+        content="",
+        tool_calls=[
+            ChatToolCall(
+                name="calculator",
+                arguments={"expression": expression},
+            )
+        ],
     )
 
-    return Pipeline(
-        planner=planner,
-        executor=executor,
-        generator=generator,
+
+def step(expression, result=None, error=None):
+    return {
+        "tool": "calculator",
+        "arguments": {"expression": expression},
+        "success": error is None,
+        "result": result,
+        "error": error,
+    }
+
+
+def post_question(monkeypatch, agent, question):
+    monkeypatch.setattr(api, "agent", agent)
+
+    return TestClient(api.app).post(
+        "/chat",
+        json={"question": question},
     )
 
 
 def test_chat_e2e_with_calculator(monkeypatch):
-    pipeline = build_test_pipeline(
+    agent = build_test_agent(
         [
-            (
-                '{"tool": "calculator", '
-                '"arguments": {"expression": "2 + 2"}}'
-            ),
-            "The answer is 4.",
+            calculator_call("2 + 2"),
+            ChatMessage(content="The answer is 4."),
         ]
     )
 
-    monkeypatch.setattr(
-        api,
-        "pipeline",
-        pipeline,
-    )
-
-    client = TestClient(api.app)
-
-    response = client.post(
-        "/chat",
-        json={"question": "What is 2 + 2?"},
-    )
+    response = post_question(monkeypatch, agent, "What is 2 + 2?")
 
     assert response.status_code == 200
     assert response.json() == {
@@ -71,29 +72,16 @@ def test_chat_e2e_with_calculator(monkeypatch):
         },
         "tool_result": 4,
         "error": None,
+        "steps": [step("2 + 2", result=4)],
     }
 
 
 def test_chat_e2e_without_tool(monkeypatch):
-    pipeline = build_test_pipeline(
-        [
-            '{"tool": null, "arguments": {}}',
-            "Hello! How can I help you?",
-        ]
+    agent = build_test_agent(
+        [ChatMessage(content="Hello! How can I help you?")]
     )
 
-    monkeypatch.setattr(
-        api,
-        "pipeline",
-        pipeline,
-    )
-
-    client = TestClient(api.app)
-
-    response = client.post(
-        "/chat",
-        json={"question": "Hello"},
-    )
+    response = post_question(monkeypatch, agent, "Hello")
 
     assert response.status_code == 200
     assert response.json() == {
@@ -102,28 +90,18 @@ def test_chat_e2e_without_tool(monkeypatch):
         "arguments": None,
         "tool_result": None,
         "error": None,
+        "steps": [],
     }
 
 
-def test_chat_validation_does_not_reach_pipeline(monkeypatch):
-    class PipelineMustNotBeCalled:
+def test_chat_validation_does_not_reach_agent(monkeypatch):
+    class AgentMustNotBeCalled:
         def run(self, question):
             raise AssertionError(
-                "Pipeline must not be called for invalid input."
+                "Agent must not be called for invalid input."
             )
 
-    monkeypatch.setattr(
-        api,
-        "pipeline",
-        PipelineMustNotBeCalled(),
-    )
-
-    client = TestClient(api.app)
-
-    response = client.post(
-        "/chat",
-        json={"question": "   "},
-    )
+    response = post_question(monkeypatch, AgentMustNotBeCalled(), "   ")
 
     assert response.status_code == 422
     assert response.json()["detail"][0]["loc"] == [
@@ -133,32 +111,15 @@ def test_chat_validation_does_not_reach_pipeline(monkeypatch):
 
 
 def test_chat_e2e_recovers_after_tool_failure(monkeypatch):
-    pipeline = build_test_pipeline(
+    agent = build_test_agent(
         [
-            (
-                '{"tool": "calculator", '
-                '"arguments": {"expression": "1 / 0"}}'
-            ),
-            (
-                '{"tool": "calculator", '
-                '"arguments": {"expression": "10 / 2"}}'
-            ),
-            "The answer is 5.",
+            calculator_call("1 / 0"),
+            calculator_call("10 / 2"),
+            ChatMessage(content="The answer is 5."),
         ]
     )
 
-    monkeypatch.setattr(
-        api,
-        "pipeline",
-        pipeline,
-    )
-
-    client = TestClient(api.app)
-
-    response = client.post(
-        "/chat",
-        json={"question": "What is 10 / 2?"},
-    )
+    response = post_question(monkeypatch, agent, "What is 10 / 2?")
 
     assert response.status_code == 200
     assert response.json() == {
@@ -169,42 +130,20 @@ def test_chat_e2e_recovers_after_tool_failure(monkeypatch):
         },
         "tool_result": 5,
         "error": None,
+        "steps": [
+            step("1 / 0", error="division by zero"),
+            step("10 / 2", result=5.0),
+        ],
     }
 
 
-def test_chat_e2e_returns_failure_after_replan_limit(
-    monkeypatch,
-):
-    pipeline = build_test_pipeline(
-        [
-            (
-                '{"tool": "calculator", '
-                '"arguments": {"expression": "1 / 0"}}'
-            ),
-            (
-                '{"tool": "calculator", '
-                '"arguments": {"expression": "1 / 0"}}'
-            ),
-            (
-                '{"tool": "calculator", '
-                '"arguments": {"expression": "1 / 0"}}'
-            ),
-            "Could not complete request.",
-        ]
+def test_chat_e2e_returns_failure_after_step_limit(monkeypatch):
+    agent = build_test_agent(
+        [calculator_call("1 / 0")] * api.agent.max_steps
+        + [ChatMessage(content="Could not complete request.")]
     )
 
-    monkeypatch.setattr(
-        api,
-        "pipeline",
-        pipeline,
-    )
-
-    client = TestClient(api.app)
-
-    response = client.post(
-        "/chat",
-        json={"question": "Calculate 1 / 0"},
-    )
+    response = post_question(monkeypatch, agent, "Calculate 1 / 0")
 
     assert response.status_code == 200
     assert response.json() == {
@@ -215,4 +154,6 @@ def test_chat_e2e_returns_failure_after_replan_limit(
         },
         "tool_result": None,
         "error": "division by zero",
+        "steps": [step("1 / 0", error="division by zero")]
+        * api.agent.max_steps,
     }

@@ -191,13 +191,15 @@ This distinction allows liveness and dependency readiness to be treated separate
 The default model is:
 
 ```text
-llama3
+qwen2.5:7b
 ```
+
+The agent uses native tool calling, so the model must support tools in Ollama. `llama3` does not; `qwen2.5` and `llama3.1` do.
 
 After starting the containers, download the model into the Ollama container:
 
 ```powershell
-docker compose exec ollama ollama pull llama3
+docker compose exec ollama ollama pull qwen2.5:7b
 ```
 
 Verify the installed model:
@@ -322,11 +324,10 @@ The API configuration is controlled through environment variables.
 | Variable                | Default                  | Description            |
 | ----------------------- | ------------------------ | ---------------------- |
 | `OLLAMA_HOST`           | `http://localhost:11434` | Ollama endpoint        |
-| `CHAT_MODEL`            | `llama3`                 | LLM model              |
+| `CHAT_MODEL`            | `qwen2.5:7b`             | LLM model              |
 | `GENERATOR_MAX_RETRIES` | `3`                      | LLM retry limit        |
 | `EXECUTOR_MAX_RETRIES`  | `2`                      | Tool retry limit       |
-| `PIPELINE_MAX_REPLANS`  | `2`                      | Replanning limit       |
-| `PLANNER_MAX_RETRIES`   | `1`                      | Invalid-plan retries   |
+| `AGENT_MAX_STEPS`       | `5`                      | Tool calls per request |
 | `RETRY_BASE_DELAY`      | `1.0`                    | Initial retry delay    |
 | `TOOL_TIMEOUT`          | `5.0`                    | Tool execution timeout |
 | `GENERATOR_TIMEOUT`     | `120.0`                  | LLM request timeout    |

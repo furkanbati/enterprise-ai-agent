@@ -1,4 +1,4 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any
 
 from pydantic import BaseModel, ConfigDict, model_validator
@@ -26,6 +26,22 @@ class PlannerResponse(BaseModel):
 
 
 @dataclass
+class ChatToolCall:
+    """A tool call requested by the model through native tool calling."""
+
+    name: str
+    arguments: dict[str, Any]
+
+
+@dataclass
+class ChatMessage:
+    """An assistant message: text content and/or requested tool calls."""
+
+    content: str
+    tool_calls: list[ChatToolCall] = field(default_factory=list)
+
+
+@dataclass
 class ToolCall:
     tool: str
     arguments: dict[str, Any]
@@ -44,9 +60,21 @@ class ToolResult:
 
 
 @dataclass
+class AgentStep:
+    """One tool call made while answering a request."""
+
+    tool: str
+    arguments: dict[str, Any]
+    success: bool
+    result: Any = None
+    error: str | None = None
+
+
+@dataclass
 class AgentResult:
     answer: str
     tool: str | None = None
     arguments: dict[str, Any] | None = None
     tool_result: Any = None
     error: str | None = None
+    steps: list[AgentStep] = field(default_factory=list)

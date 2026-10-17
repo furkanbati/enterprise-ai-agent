@@ -2,364 +2,208 @@
 
 ## Overview
 
-Enterprise AI Agent is built around a pipeline-based architecture that separates planning, execution, and response generation into independent components.
+Enterprise AI Agent answers questions with a native tool calling loop. The model is given the schemas of the registered tools; on each turn it either requests tool calls or gives the final answer. Tool results and errors are added to the conversation, so the model can chain tools and correct its own mistakes.
 
-The goal of this design is to keep responsibilities clear, improve reliability, and make the system easier to test and extend.
-
-The Pipeline acts as the orchestration layer and coordinates all other components.
+The loop itself is small. Most of the design is in the boundaries around it: what the model is allowed to do, how tool calls are validated and limited, and which rules are enforced in code rather than left to the prompt.
 
 ---
 
 ## High-Level Architecture
 
 ```text
-User
- ↓
-FastAPI
- ↓
-Pipeline
- ↓
-Planner
- ↓
-Tool Required?
- ├── No → Generator → Answer
- │
- └── Yes
-       ↓
-    Executor
-       ↓
-    Success?
-     ├── Yes → Generator → Answer
-     │
-     └── No
-           ↓
-        Replan
-           ↓
-        Executor
+User question
+     ↓
+  FastAPI  (/chat, request validation, request ID)
+     ↓
+   Agent ──────────────► Generator (Ollama, with tool schemas)
+     ↑                        ↓
+     │                 Tool calls requested?
+     │                  ├── No  → Final answer + steps
+     │                  └── Yes
+     │                        ↓
+     │                    Executor
+     │              (validate → run → timeout)
+     │                        ↓
+     └──── tool result or error added to the conversation
 ```
 
 ---
 
 ## Request Lifecycle
 
-Every request follows the same high-level flow.
-
 ### 1. API Layer
 
-The API receives a user question through the `/chat` endpoint.
-
-Example:
+The API receives a question through `/chat`:
 
 ```json
 {
-  "question": "What is 10 * 5?"
+  "question": "What is 15% of 2480?"
 }
 ```
 
-The request is validated before entering the agent workflow.
+The question is validated (non-blank, at most 4,000 characters) before it reaches the agent. Every request gets an ID that appears in logs and in the `X-Request-ID` response header.
+
+### 2. Agent Loop
+
+The agent starts a conversation with a system prompt and the user question, then repeats:
+
+1. Send the conversation and the tool schemas to the model.
+2. If the model returns no tool calls, its content is the final answer.
+3. Otherwise, run each requested tool call through the Executor and append the result or error as a `tool` message.
+
+A request in which the model corrects its own call, recorded with `qwen2.5:7b`:
+
+```text
+system:    rules for tool use
+user:      What is 2^10? Write the expression exactly as 2^10.
+assistant: tool call → calculator {"expression": "2^10"}
+tool:      Error: Unsupported expression ...
+assistant: tool call → calculator {"expression": "2**10"}
+tool:      1024
+assistant: The result of 2^10 is 1024.
+```
+
+Chaining works the same way: a later call can use an earlier result because it is already in the conversation. How reliably the model chains depends on the model; see Known Limitations in the README.
+
+### 3. Response
+
+The response contains the answer and a `steps` list with every tool call: tool, arguments, success, result and error. The `tool`, `arguments`, `tool_result` and `error` fields describe the last tool call, for clients written for single-tool answers.
 
 ---
 
-### 2. Pipeline
+## Error Handling in the Loop
 
-The Pipeline is the central coordinator of the system.
+Tool failures are returned to the model rather than raised:
 
-Responsibilities:
+| Failure | Message to the model | Tools stay available? |
+|---|---|---|
+| Malformed arguments, unsupported expression, unknown tool | `Error: ...` | Yes, the model may correct the call |
+| Request rejected by the tool (`ToolRequestRejected`) | `The tool rejected this request: ...` | No, the model must explain |
+| Tool call beyond the step limit | `Not executed: the tool call limit was reached.` | No |
 
-* Receive the user question
-* Invoke the Planner
-* Execute tools when required
-* Trigger replanning when necessary
-* Generate the final answer
+Self-correction example:
 
-The Pipeline does not perform planning, execution, or generation itself. It only coordinates these components.
+```text
+calculator {"expression": "2^10"}  → Error: Unsupported expression ...
+calculator {"expression": "2**10"} → 1024
+```
+
+Failures of the model itself (connection errors, timeouts, invalid responses) are retried by the Generator and, if they persist, returned by the API as `503` or `502`.
 
 ---
 
-### 3. Planner
+## Safeguards
 
-The Planner determines whether a tool is required.
+These rules are enforced in code, not only in the system prompt:
 
-Possible outcomes:
+### Step Limit
 
-#### No Tool Required
+`AGENT_MAX_STEPS` (default 5) caps the number of tool calls per request. When it is reached, the agent withdraws the tools and asks the model to answer from the results it has.
 
-```text
-Question
- ↓
-Planner
- ↓
-No Tool
- ↓
-Generator
-```
+### Rejected Requests
 
-Example:
+A tool raises `ToolRequestRejected` when it understands a request but will not carry it out, for example a calculation whose result exceeds the size limit. The agent then withdraws the tools, so the only thing the model can do is explain.
 
-```text
-Who is Alan Turing?
-```
+This rule exists because of an observed failure: with `llama3`, after the calculator rejected `2 ** 5000000`, the model rewrote the expression as `2 ** 10` and answered `1024`. A prompt instruction not to change the user's values was not enough.
 
-The Planner may decide that a direct LLM response is sufficient.
+### Termination
+
+Tool calls requested after the tools are withdrawn are not executed, and the agent returns the model's content (or a fallback answer). While tools are available, every turn executes at least one tool call, so a request finishes within `AGENT_MAX_STEPS + 2` model calls.
+
+### Bounded Tool Output
+
+Tool results and errors passed back to the model are limited to 4,000 characters, and integers too large for `str()` are replaced by a placeholder. The API response still contains the full result.
 
 ---
 
-#### Tool Required
+## Components
 
-```text
-Question
- ↓
-Planner
- ↓
-Tool Call
- ↓
-Executor
-```
+### Generator
 
-Example:
+Communicates with Ollama.
 
-```text
-What is 25 * 48?
-```
+* `chat(messages, tools)` sends a conversation with tool schemas and returns a `ChatMessage` with content and tool calls
+* Tool calls are normalised; JSON-string arguments are decoded, and calls without a name or with non-object arguments are rejected
+* Applies `GENERATOR_TIMEOUT`, retries connection errors, timeouts and 5xx responses with exponential backoff
 
-The Planner generates a structured tool call.
+### Executor
 
-Example:
+Runs one tool call.
 
-```json
-{
-  "tool": "calculator",
-  "arguments": {
-    "expression": "25 * 48"
-  }
-}
-```
+* Looks up the tool in the registry
+* Validates the arguments against the tool's JSON Schema
+* Runs the tool in a worker thread with `TOOL_TIMEOUT`
+* Retries `ConnectionError` with backoff; timeouts are not retried
+* Returns a structured `ToolResult` instead of raising
 
-The Planner never executes tools directly.
+### Tool Registry
 
----
+Holds the registered tools, rejects duplicate names, looks tools up by name, and exposes their schemas in the native tool calling format.
 
-## Tool Registry
+### Tool Validation
 
-The Tool Registry maintains the list of available tools.
-
-Responsibilities:
-
-* Store registered tools
-* Prevent duplicate registrations
-* Provide tool lookup
-* Expose tool metadata
-
-The Planner uses tool metadata to understand which tools are available.
-
-The Executor uses the registry to retrieve the selected tool.
-
----
-
-## Tool Validation
-
-Before execution, tool arguments are validated against a schema.
-
-Example:
-
-Valid:
-
-```json
-{
-  "expression": "10 * 5"
-}
-```
-
-Invalid:
-
-```json
-{
-  "unknown_field": "value"
-}
-```
-
-Validation prevents malformed tool calls from reaching the execution layer.
-
----
-
-## Executor
-
-The Executor is responsible for tool execution.
-
-Responsibilities:
-
-* Execute tools
-* Apply timeout protection
-* Retry recoverable failures
-* Capture execution errors
-* Return structured results
-
-Successful execution:
-
-```text
-Tool
- ↓
-Result
- ↓
-ToolResult(success=True)
-```
-
-Failed execution:
-
-```text
-Tool
- ↓
-Exception
- ↓
-ToolResult(success=False)
-```
-
-The Executor isolates failures so that a single tool error cannot crash the entire request.
-
----
-
-## Replanning
-
-If tool execution fails, the system can attempt recovery.
-
-Flow:
-
-```text
-Planner
- ↓
-Tool Call
- ↓
-Executor
- ↓
-Failure
- ↓
-Planner receives error context
- ↓
-Corrected Tool Call
- ↓
-Executor
-```
-
-This mechanism allows the system to recover from certain planning or argument-generation mistakes.
-
-The maximum number of replanning attempts is controlled by:
-
-```text
-PIPELINE_MAX_REPLANS
-```
-
----
-
-## Generator
-
-The Generator is responsible for communication with Ollama.
-
-Responsibilities:
-
-* Send prompts to the model
-* Receive responses
-* Retry transient failures
-* Apply retry backoff
-
-The Generator is used in two scenarios:
-
-### Direct Response
-
-```text
-Question
- ↓
-Generator
- ↓
-Answer
-```
-
-### Tool-Assisted Response
-
-```text
-Question
- ↓
-Planner
- ↓
-Executor
- ↓
-Tool Result
- ↓
-Generator
- ↓
-Answer
-```
-
-This allows the model to transform raw tool output into a user-friendly response.
+Arguments are validated against each tool's JSON Schema before execution. Tool schemas use `additionalProperties: false`, so unexpected arguments are rejected.
 
 ---
 
 ## Configuration
 
-Application behavior is controlled through environment variables.
-
-Current configuration includes:
+Application behavior is controlled through environment variables:
 
 ```text
 OLLAMA_HOST
 CHAT_MODEL
 
+AGENT_MAX_STEPS
 GENERATOR_MAX_RETRIES
 EXECUTOR_MAX_RETRIES
-PIPELINE_MAX_REPLANS
-PLANNER_MAX_RETRIES
 
 RETRY_BASE_DELAY
 TOOL_TIMEOUT
 GENERATOR_TIMEOUT
 ```
 
-Configuration is validated during startup.
+Configuration is validated during startup. Invalid values prevent the application from starting.
 
-Invalid values prevent the application from starting.
+`CHAT_MODEL` must support tool calling in Ollama. The default is `qwen2.5:7b`; `llama3` does not support tools.
 
 ---
 
 ## Reliability Features
 
-The system includes several reliability mechanisms.
-
 ### Retry and Backoff
 
-Generator retries temporary LLM failures using configurable retry limits and delays.
+The Generator retries temporary LLM failures using configurable retry limits and delays.
 
 ### Tool Retries
 
-Executor retries tool calls that fail with a `ConnectionError`, using exponential backoff.
+The Executor retries tool calls that fail with a `ConnectionError`, using exponential backoff.
 
 Timeouts are not retried. A tool runs in a worker thread, and a thread cannot be stopped once it has started, so a timed-out call keeps running in the background. Retrying it would start a second concurrent execution of the same call and repeat any side effects.
 
 ### Timeout Protection
 
-Tool execution is limited by:
-
-```text
-TOOL_TIMEOUT
-```
-
-When a tool exceeds the timeout, the request stops waiting for it and receives a failed tool result.
+When a tool exceeds `TOOL_TIMEOUT`, the request stops waiting for it and receives a failed tool result.
 
 The timeout cannot interrupt CPU-bound work that holds the Python GIL, and it does not stop the worker thread. Tools therefore bound their own work: the calculator rejects operations whose result would exceed 1,000 digits before computing them.
 
 ### Exception Isolation
 
-Failures are converted into structured results instead of propagating unhandled exceptions.
+Tool failures are converted into structured results. Unexpected errors in the API return a JSON `500` with the request ID and are counted in the HTTP metrics.
 
-### Recovery Flow
+---
 
-Planner-driven replanning allows the system to recover from some tool failures.
+## Observability
 
-Replanning is skipped when a tool raises `ToolRequestRejected`, meaning the request was understood but cannot be fulfilled, for example a calculation whose result exceeds the size limit. Replanning such a request can only succeed by changing what the user asked for; in testing, llama3 rewrote `2 ** 5000000` as `2 ** 10` and answered `1024`. The pipeline instead explains the failure to the user.
+* Logs include the request ID
+* `agent_http_requests_total` and `agent_http_request_duration_seconds`, labelled by route template
+* `agent_tool_calls_total` and `agent_tool_failures_total`, per tool
+* `agent_tool_calls_per_request` and `agent_step_limit_reached_total` for the agent loop
+* `agent_generation_total` for model calls
 
 ---
 
 ## Health Monitoring
-
-The system exposes two operational endpoints.
 
 ### Health
 
@@ -367,7 +211,7 @@ The system exposes two operational endpoints.
 /health
 ```
 
-Used to verify that the API process is alive.
+Verifies that the API process is alive.
 
 ### Ready
 
@@ -375,12 +219,7 @@ Used to verify that the API process is alive.
 /ready
 ```
 
-Used to verify that:
-
-* Ollama is reachable
-* The configured model is available
-
-These endpoints support container health monitoring and deployment readiness checks.
+Verifies that Ollama is reachable and the configured model is available.
 
 ---
 
@@ -388,56 +227,27 @@ These endpoints support container health monitoring and deployment readiness che
 
 ### Calculator
 
-Purpose:
-
-* Evaluate mathematical expressions
-
-Example:
-
-```text
-10 * 5
-```
-
-Output:
-
-```text
-50
-```
-
----
+Evaluates arithmetic expressions with a restricted evaluator: numbers, `+ - * / // % **`, parentheses, `abs`, `round`, `min`, `max`, `int`, `float`, `sqrt`, `pi` and `e`. Integer results above 1,000 digits are rejected with `ToolRequestRejected`.
 
 ### DateTime
 
-Purpose:
-
-* Return the current UTC date and time
-
-Example:
-
-```text
-Current UTC time
-```
+Returns the current UTC date and time.
 
 ---
 
 ## Design Principles
 
-### Separation of Concerns
+### Code-Enforced Boundaries
 
-Each component owns a single responsibility.
-
-* Planner plans
-* Executor executes
-* Generator generates
-* Pipeline orchestrates
+The model decides what to do; code decides what it is allowed to do. Limits, tool withdrawal and termination do not depend on the model following instructions.
 
 ### Explicit Error Handling
 
-Failures are represented as structured results rather than uncaught exceptions.
+Failures are represented as structured results and fed back to the model rather than raised.
 
 ### Testability
 
-Components can be tested independently.
+The agent is tested with a scripted model and the real Executor and tools, so the loop's behavior is verified without a running LLM.
 
 ### Production-Oriented Simplicity
 

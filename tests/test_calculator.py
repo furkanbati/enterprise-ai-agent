@@ -106,3 +106,17 @@ def test_unsupported_expression_is_not_a_rejected_request():
         CalculatorTool().execute({"expression": "2 ^ 3"})
 
     assert not isinstance(exc_info.value, ToolRequestRejected)
+
+
+@pytest.mark.parametrize(
+    "expression",
+    [
+        "result = (17 + 25) * 3; sqrt(result)",
+        "(17 + 25) * 3; sqrt(126)",
+        "x = 5",
+        "15% * 2480",
+    ],
+)
+def test_calculator_rejects_statements_and_invalid_syntax(expression):
+    with pytest.raises(ValueError, match="Invalid expression"):
+        CalculatorTool().execute({"expression": expression})
