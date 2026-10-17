@@ -596,15 +596,32 @@ docker compose cp agent-api:/app/evaluation/results ./evaluation/
 Each column changes one thing. The effects that can be attributed to a change:
 
 - **Weekday in the datetime result:** the weekday question went from 0/3 to 3/3. Before, the model named the wrong day in every run (Sunday, Friday, Friday).
-- **`date_diff` tool:** the two day-count questions went from 0/3 and 1/3 to 3/3 each. In all six runs the model called `datetime` and then `date_diff` with the right dates, so the answers are tool-verified instead of the model's own arithmetic ("89 days until Christmas" before, 69 now). The model did not call `date_diff` for any other case.
+- **`date_diff` tool:** the two day-count questions went from 0/3 and 1/3 to 3/3 each. In those runs the model called `datetime` and then `date_diff` with the right dates, so the answers are tool-verified instead of the model's own arithmetic ("89 days until Christmas" before, 69 now). The model did not call `date_diff` for any other case. A later run with 5 repeats per case (see below) puts the day-count pass rate at 7/10, so the tool is a clear improvement but not a guarantee.
 
 With 3 runs per case a single run moves a case by 33 points, so smaller differences are within run-to-run variation.
+
+### Tried and rejected: a prompt rule for the date
+
+The model sometimes answered "2023" for "What year is it?" without calling `datetime`. A system-prompt rule was tested to address it:
+
+> The datetime tool returns the real current date and time. Call it for any question about the current date, day or year, and trust its result even if it is later than you would expect from your training data.
+
+The full evaluation looked positive at first: "What year is it?" went from 1/3 to 3/3 and overall pass rose from 86% to 89% ([report](evaluation/results/qwen2.5-7b-trust-prompt.md)). Tool-verified answers fell from 74% to 64%, though, so the date and chain cases were rerun with 5 repeats each, with and without the rule ([without](evaluation/results/targeted-date-chain-prompt-b.md), [with](evaluation/results/targeted-date-chain-prompt-c.md)):
+
+| Date and chain cases, 5 runs each | Without the rule | With the rule |
+|---|---|---|
+| "What year is it?" | 4/5 | 4/5 |
+| Day-count cases | 7/10 | 3/10 |
+| `date_diff` used in day-count cases | 7/10 | 3/10 |
+| Chain cases, tool-verified | 35% | 15% |
+
+The improvement on the year question was run-to-run variation; with more runs both prompts score 4/5. The cost was real: the rule pushed the model towards repeated `datetime` calls, sometimes until the step limit, and away from `date_diff`. The rule was not adopted.
 
 What the evaluation shows:
 
 - **Simple tool use is reliable.** Every single-tool calculation passed, and every answer came from the calculator.
-- **The model guesses what the tools do not provide.** Weekdays and date differences were wrong until a tool returned them, then right every time. Adding a small tool helped more than asking the model to reason.
-- **The model does not fully trust the tools' date.** For "What year is it?" it increasingly answered "2023" without calling `datetime` (3/3, 2/3, 1/3 passing across the runs), and one "25 years from now" answer started with "If today is October 17, 2023".
+- **The model guesses what the tools do not provide.** Weekdays and date differences were wrong until a tool returned them. Adding a small tool helped more than asking the model to reason, and more than a prompt rule.
+- **The model does not fully trust the tools' date.** For "What year is it?" it sometimes answers "2023" without calling `datetime` (4/5 passing with 5 runs), and some "25 years from now" answers start with "If today is October 17, 2023". A prompt rule against this did not help (see below).
 - **Time-of-day arithmetic is still unsolved.** "How many hours are left until the end of today?" passed 0/3 in the last run; no tool covers it and the model answered "no hours left".
 - **Correct is not the same as verified.** Self-correction cases pass every time, but in half of the runs the model states the corrected value after the error instead of calling the calculator again.
 - **The rejection safeguard works when it is reached.** `2 ** 5000000` was rejected and explained in every run. For `10 ** 2000` the model wrote `10^2000`, got a fixable error, and stopped instead of retrying, so the request never reached the size limit.
