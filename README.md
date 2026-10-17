@@ -475,6 +475,14 @@ enterprise-ai-agent/
 │   ├── architecture.md
 │   └── deployment.md
 │
+├── evaluation/
+│   ├── datasets/           Labelled evaluation cases
+│   ├── results/            Evaluation reports per model
+│   ├── checks.py           Tool, answer and verification checks
+│   ├── runner.py           Repeated runs and aggregation
+│   ├── report.py           Markdown and JSON reports
+│   └── tools.py            Fixed-clock datetime tool
+│
 ├── tests/
 │   ├── test_agent.py
 │   ├── test_api.py
@@ -482,6 +490,8 @@ enterprise-ai-agent/
 │   ├── test_config.py
 │   ├── test_datetime_tool.py
 │   ├── test_e2e.py
+│   ├── test_evaluation_checks.py
+│   ├── test_evaluation_runner.py
 │   ├── test_executor.py
 │   ├── test_generator.py
 │   ├── test_models.py
@@ -518,10 +528,68 @@ The architecture is designed so these capabilities can be introduced as addition
 
 ---
 
+# Evaluation
+
+The `evaluation/` package measures the agent against labelled cases with a real model, so changes to tools, prompts or models can be compared with numbers.
+
+The bundled dataset, [`evaluation/datasets/agent_cases.jsonl`](evaluation/datasets/agent_cases.jsonl), has 21 cases in seven categories: no tool needed, single tool, date questions, chained tools, multi-step calculations, self-correction and rejected requests. Each case is run several times, because the same question can pass in one run and fail in the next.
+
+During evaluation the `datetime` tool is replaced by one that always reports `2026-10-17T09:00:00Z`, so answers such as "69 days until Christmas" stay stable.
+
+### Metrics
+
+- **Pass:** tool selection and the answer check both pass
+- **Tool selection:** every required tool is called and no tool outside the allowed set
+- **Answer:** the expected number appears in the answer (within a tolerance), or one of the expected phrases does; for rejection cases, a tool rejected the request and nothing succeeded afterwards
+- **Tool-verified:** the expected number was produced by a tool, not stated by the model
+
+### Running the evaluation
+
+With Ollama running and the model pulled:
+
+```powershell
+docker compose exec agent-api python -m evaluation
+docker compose exec agent-api python -m evaluation --model llama3.1:8b --repeats 5
+docker compose exec agent-api python -m evaluation --categories chain date
+```
+
+Reports are written to `evaluation/results/<model>.md` and `.json`, including a trace of the first failing run of each case. Inside the container they are not on a mounted volume; copy them out with:
+
+```powershell
+docker compose cp agent-api:/app/evaluation/results ./evaluation/
+```
+
+### Baseline: qwen2.5:7b
+
+21 cases, 3 runs each. [Full report](evaluation/results/qwen2.5-7b.md).
+
+| Category | Pass | Tool-verified |
+|---|---|---|
+| **Overall** | **73%** | **51%** |
+| No tool | 100% | n/a |
+| Single tool | 100% | 100% |
+| Date | 67% | n/a |
+| Chained tools | 17% | 0% |
+| Multi-step | 83% | 50% |
+| Self-correction | 100% | 33% |
+| Rejection | 50% | n/a |
+
+What the baseline shows:
+
+- **Simple tool use is reliable.** Every single-tool calculation passed, and every answer came from the calculator.
+- **Chaining is the weak spot.** The model calls `datetime` but almost never passes the date to the calculator; it reasons about dates itself and gets them wrong. Several answers rejected the tool's date as wrong ("If today is October 17, 2023, then 25 years from now will be 2048"), which points to the model trusting its training data over the tool.
+- **Dates without weekday information are guessed.** The datetime tool returns an ISO timestamp only, and the model named the wrong weekday in all three runs.
+- **Correct is not the same as verified.** Self-correction cases passed every time, but in two thirds of the runs the model stated the corrected value after the error instead of calling the calculator again.
+- **The rejection safeguard works when it is reached.** `2 ** 5000000` was rejected and explained in every run. For `10 ** 2000` the model wrote `10^2000`, got a fixable error, and stopped instead of retrying, so the request never reached the size limit.
+
+The answer checks are lexical: a case passes if the expected number appears anywhere in the answer. The dataset is small and hand-written, so the results are a regression baseline for this project, not a general benchmark.
+
+---
+
 # Known Limitations
 
-* **Model reasoning.** The loop supports chaining tools, and this is covered by tests, but a 7B model does not always use it. In local runs `qwen2.5:7b` tended to do date arithmetic itself after calling `datetime` instead of passing the dates to the calculator, and answered "How many days are left until New Year's Eve?" inconsistently. A larger model or a dedicated date tool would help; an evaluation suite would measure it.
-* **Unverified final steps.** After a tool error, the model sometimes states the corrected result without calling the tool again. Its answers for `2^10` were correct, but the value was not computed by the tool in that run.
+* **Model reasoning.** The loop supports chaining tools, and this is covered by tests, but `qwen2.5:7b` rarely uses it: chained-tool cases pass 17% of the time (see Evaluation). The model does date arithmetic itself after calling `datetime` instead of passing the dates to the calculator.
+* **Unverified final steps.** After a tool error, the model often states the corrected result without calling the tool again; only 33% of self-correction runs were tool-verified.
 * **Thread-based timeouts.** A timed-out tool keeps running in its worker thread. Tools bound their own work, but full isolation would need a separate process per call.
 
 ---
@@ -536,7 +604,7 @@ Possible next steps include:
 * Conversation memory
 * Streaming responses
 * Tracing and observability
-* An evaluation suite for tool selection and answer accuracy
+* Model comparison with the evaluation suite
 * Process-isolated tool execution
 
 ---
