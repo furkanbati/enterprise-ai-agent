@@ -327,8 +327,7 @@ The API configuration is controlled through environment variables.
 | `CHAT_MODEL`            | `qwen2.5:7b`             | LLM model              |
 | `GENERATOR_MAX_RETRIES` | `3`                      | LLM retry limit        |
 | `EXECUTOR_MAX_RETRIES`  | `2`                      | Tool retry limit       |
-| `PIPELINE_MAX_REPLANS`  | `2`                      | Replanning limit       |
-| `PLANNER_MAX_RETRIES`   | `1`                      | Invalid-plan retries   |
+| `AGENT_MAX_STEPS`       | `5`                      | Tool calls per request |
 | `RETRY_BASE_DELAY`      | `1.0`                    | Initial retry delay    |
 | `TOOL_TIMEOUT`          | `5.0`                    | Tool execution timeout |
 | `GENERATOR_TIMEOUT`     | `120.0`                  | LLM request timeout    |

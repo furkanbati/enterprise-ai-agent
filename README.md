@@ -1,205 +1,146 @@
 # Enterprise AI Agent
 
-A production-oriented AI agent built with **FastAPI**, **Ollama**, and structured tool execution.
+A production-oriented AI agent built with **FastAPI**, **Ollama**, and native tool calling.
 
-The agent evaluates each user request, determines whether a tool is required, executes the selected tool, and uses an LLM to generate the final response. Planning, execution, and generation are separated to improve reliability, maintainability, and testability.
+The agent answers a question by running a tool calling loop: on each turn the model either calls one of the registered tools or gives the final answer. Tool results and errors are fed back into the conversation, so the agent can chain several tools and correct its own failed calls. Every tool call runs through a validated, time-limited executor, and the full trace is returned with the answer.
 
-The project focuses on a simple but robust agent architecture with:
+The project focuses on a small but robust agent runtime with:
 
-* Tool-aware planning
-* Structured tool execution
-* Automatic recovery and replanning
+* Native tool calling with multi-step tool chaining
+* Self-correction from tool errors
+* Bounded loops with code-enforced safeguards
 * JSON Schema argument validation
-* Retry and timeout protection
-* Health and readiness monitoring
-* Production-oriented Docker runtime
+* Timeouts, retries and resource limits
+* Health, readiness and Prometheus metrics
+* Production-oriented Docker runtime and CI/CD
 
 ---
 
 # Architecture
 
 ```text
-User
- ↓
-FastAPI
- ↓
-Pipeline
- ↓
-Planner
- ↓
-Tool Required?
- ├── No → Generator → Answer
- │
- └── Yes
-       ↓
-    Executor
-       ↓
-    Success?
-     ├── Yes → Generator → Answer
-     │
-     └── No → Replan → Executor
+User question
+     ↓
+  FastAPI
+     ↓
+   Agent ──────────────► Generator (Ollama, with tool schemas)
+     ↑                        ↓
+     │                 Tool calls requested?
+     │                  ├── No  → Final answer + steps
+     │                  └── Yes
+     │                        ↓
+     │                    Executor
+     │              (validate → run → timeout)
+     │                        ↓
+     └──── tool result or error added to the conversation
 ```
 
-The architecture separates three core responsibilities:
+Responsibilities are split across small components:
 
-```text
-Planner
-   ↓
-Decide what to do
+| Component | Responsibility |
+|---|---|
+| `Agent` | Runs the tool calling loop, enforces the step limit and safeguards |
+| `Generator` | Talks to Ollama; applies timeouts, retries and backoff |
+| `Executor` | Validates arguments and runs a tool with a timeout |
+| `ToolRegistry` | Holds the tools and exposes their schemas to the model |
+| `ToolArgumentValidator` | Checks tool arguments against JSON Schema |
 
-Executor
-   ↓
-Run the selected tool safely
-
-Generator
-   ↓
-Produce the final response
-```
-
-This separation also makes individual components easier to test and replace.
+Each component can be tested on its own; the agent tests use a scripted model with the real executor and tools.
 
 ---
 
 # What This Project Demonstrates
 
-The project is designed as a focused implementation of an LLM agent runtime rather than a collection of unrelated features.
-
-It demonstrates how to build an agent that can:
-
-* Decide when tool usage is necessary
-* Select a registered tool
-* Validate tool arguments before execution
-* Execute tools with timeout and retry protection
-* Recover from tool failures
-* Replan when an execution attempt fails
-* Generate a final user-facing response from the tool result
-* Expose the entire workflow through a REST API
+* Native tool calling through Ollama instead of hand-parsed JSON
+* Multi-step reasoning: using one tool's result as input to the next
+* Recovery by feeding tool errors back to the model
+* Safeguards enforced in code rather than only in the prompt
+* Defensive tool design: argument validation, timeouts, resource limits
+* An observable agent: request IDs, Prometheus metrics, and a per-request step trace
 
 ---
 
 # Example Agent Flows
 
-## Direct LLM Response
+The flows below were recorded with `qwen2.5:7b` running locally through Ollama.
 
-For a request that does not require a tool:
-
-```text
-User
- ↓
-Planner
- ↓
-No tool required
- ↓
-Generator
- ↓
-Answer
-```
-
-## Calculator Tool
-
-For a mathematical request:
+## Direct Answer
 
 ```text
-User
- ↓
-Planner
- ↓
-Calculator
- ↓
-Executor
- ↓
-Generator
- ↓
-Answer
+"Say hello in Turkish."
+   → no tool calls
+   → "Merhaba! How can I assist you today?"
 ```
 
-Example:
+## Single Tool
 
 ```text
-"What is 10 * 5?"
+"What is 15% of 2480?"
+   → calculator {"expression": "2480 * 0.15"} → 372.0
+   → "15% of 2480 is 372.0."
 ```
 
-The planner selects the calculator and produces a structured tool call:
+## Self-Correction
+
+The calculator rejects `^`, and the error goes back to the model, which fixes the call:
+
+```text
+"What is 2^10? Write the expression exactly as 2^10."
+   → calculator {"expression": "2^10"}  → Error: Unsupported expression ...
+   → calculator {"expression": "2**10"} → 1024
+   → "The result of 2^10 is 1024."
+```
+
+## Rejected Request
+
+```text
+"What is 2 to the power of 5000000?"
+   → calculator {"expression": "2**5000000"} → rejected: Result exceeds 1000 digits.
+   → tools withdrawn
+   → the model explains that the number is too large instead of inventing a value
+```
+
+## Response Shape
 
 ```json
 {
+  "answer": "The result of 2^10 is 1024.",
   "tool": "calculator",
-  "arguments": {
-    "expression": "10 * 5"
-  }
+  "arguments": {"expression": "2**10"},
+  "tool_result": 1024,
+  "error": null,
+  "steps": [
+    {
+      "tool": "calculator",
+      "arguments": {"expression": "2^10"},
+      "success": false,
+      "result": null,
+      "error": "Unsupported expression. Use numbers, + - * / // % **, parentheses, and abs, round, min, max, int, float, sqrt, pi or e."
+    },
+    {
+      "tool": "calculator",
+      "arguments": {"expression": "2**10"},
+      "success": true,
+      "result": 1024,
+      "error": null
+    }
+  ]
 }
 ```
 
-## Failure Recovery
-
-When a tool execution fails:
-
-```text
-User
- ↓
-Planner
- ↓
-Executor
- ↓
-Tool Failure
- ↓
-Replan
- ↓
-Executor
- ↓
-Generator
- ↓
-Answer
-```
-
-The pipeline supports bounded replanning rather than endlessly retrying failed execution.
-
-Replanning is used for failures the model can fix, such as a malformed expression. When a tool rejects a request it cannot fulfil, for example a result that exceeds the calculator's size limit, the pipeline explains the failure instead of replanning, so the model cannot change the user's numbers to produce an answer.
+`steps` lists every tool call in order. `tool`, `arguments`, `tool_result` and `error` describe the last call, so clients written for single-tool answers keep working.
 
 ---
 
-# Components
+# Safeguards
 
-## API
+The loop is bounded, and the important rules are enforced in code:
 
-* Receives HTTP requests
-* Validates request payloads
-* Exposes the chat endpoint
-* Exposes health and readiness endpoints
-
-## Pipeline
-
-* Orchestrates the complete agent workflow
-* Coordinates planning, execution, and generation
-* Handles recovery and replanning
-
-## Planner
-
-* Determines whether a tool is required
-* Selects the appropriate tool
-* Produces structured tool arguments
-
-## Executor
-
-* Executes tools
-* Applies timeouts and retries connection failures
-* Isolates tool execution failures
-
-## Generator
-
-* Interacts with Ollama
-* Generates user-facing responses
-* Applies retry and backoff policies
-
-## Tool Registry
-
-* Maintains the available tools
-* Provides tool discovery for planning and execution
-
-## Tool Validator
-
-* Validates tool arguments
-* Applies JSON Schema constraints before execution
+* **Step limit.** `AGENT_MAX_STEPS` (default 5) caps tool calls per request. When it is reached, tools are withdrawn and the model is asked to answer from the results it already has.
+* **Rejected requests.** When a tool raises `ToolRequestRejected`, meaning the request was understood but cannot be fulfilled, tools are withdrawn so the model can only explain the problem. Without this, a model can "succeed" by changing the user's values: in testing, `llama3` rewrote `2 ** 5000000` as `2 ** 10` and answered `1024`.
+* **Termination.** Tool calls requested after tools are withdrawn are never executed, so every request finishes within `AGENT_MAX_STEPS + 2` model calls.
+* **Bounded tool output.** Tool results passed back to the model are limited to 4,000 characters.
+* **Tool limits.** The executor validates arguments against JSON Schema and applies `TOOL_TIMEOUT`. A thread-based timeout cannot stop CPU-bound work, so tools also bound their own work.
 
 ---
 
@@ -207,10 +148,10 @@ Replanning is used for failures the model can fix, such as a malformed expressio
 
 ## Agent Capabilities
 
-* Tool-aware planning
-* Structured tool calls
-* Tool execution
-* Automatic replanning after failures
+* Native tool calling
+* Multi-step tool chaining
+* Self-correction from tool errors
+* Step trace in every response
 * JSON Schema tool argument validation
 
 ## Reliability
@@ -218,37 +159,23 @@ Replanning is used for failures the model can fix, such as a malformed expressio
 * LLM request timeouts, retry and backoff
 * Tool retries for connection failures
 * Tool execution timeouts (timed-out calls are not retried)
+* Bounded agent loop
 * Exception isolation
-* Recovery and replanning flow
 
 ## Security
 
 * Request validation
 * Tool argument validation
-* Controlled tool execution
+* Resource limits in tools
 * Safe error handling
 * Non-root API container
 
-## Runtime
+## Observability
 
-* API health endpoint
-* API readiness endpoint
-* Docker healthchecks
-* Automatic container restart policy
-* Production and development dependency separation
-
-## Testing
-
-* Unit tests
-* API tests
-* Configuration tests
-* Planner tests
-* Generator tests
-* Executor tests
-* Pipeline tests
-* Tool registry tests
-* Tool validation tests
-* Individual tool tests
+* Request IDs in logs and response headers
+* HTTP request metrics labelled by route
+* Tool call, failure and per-request step metrics
+* Health and readiness endpoints
 
 ---
 
@@ -264,31 +191,11 @@ Supported: numbers, `+ - * / // % **`, parentheses, `abs`, `round`, `min`, `max`
 
 Integer results are limited to 1,000 digits. Oversized operations are rejected before they are computed, so a single expression cannot occupy a CPU core.
 
-Example:
-
-```json
-{
-  "tool": "calculator",
-  "arguments": {
-    "expression": "10 * 5"
-  }
-}
-```
-
 ## DateTime
 
 Returns the current UTC date and time.
 
-Example:
-
-```json
-{
-  "tool": "datetime",
-  "arguments": {}
-}
-```
-
-The tool registry is designed so that additional tools can be added without changing the core planner and executor architecture.
+New tools implement the `Tool` interface in `tools/base.py` and are added to the registry; their JSON Schema is sent to the model automatically.
 
 ---
 
@@ -392,11 +299,20 @@ Example response:
     "expression": "10 * 5"
   },
   "tool_result": 50,
-  "error": null
+  "error": null,
+  "steps": [
+    {
+      "tool": "calculator",
+      "arguments": {"expression": "10 * 5"},
+      "success": true,
+      "result": 50,
+      "error": null
+    }
+  ]
 }
 ```
 
-The response exposes the selected tool and tool result so the execution flow is observable through the API.
+The `steps` list makes every tool call observable through the API.
 
 ---
 
@@ -428,8 +344,7 @@ The application is configured through environment variables.
 | CHAT_MODEL            | qwen2.5:7b             | Model used for generation         |
 | GENERATOR_MAX_RETRIES | 3                      | Maximum LLM retry attempts        |
 | EXECUTOR_MAX_RETRIES  | 2                      | Maximum tool retry attempts       |
-| PIPELINE_MAX_REPLANS  | 2                      | Maximum replanning attempts       |
-| PLANNER_MAX_RETRIES   | 1                      | Retries for invalid planner output |
+| AGENT_MAX_STEPS       | 5                      | Maximum tool calls per request    |
 | RETRY_BASE_DELAY      | 1.0                    | Initial retry delay in seconds    |
 | TOOL_TIMEOUT          | 5.0                    | Tool execution timeout in seconds |
 | GENERATOR_TIMEOUT     | 120.0                  | LLM request timeout in seconds    |
@@ -441,7 +356,7 @@ environment:
   CHAT_MODEL: qwen2.5:7b
   GENERATOR_MAX_RETRIES: 5
   EXECUTOR_MAX_RETRIES: 3
-  PIPELINE_MAX_REPLANS: 2
+  AGENT_MAX_STEPS: 8
 ```
 
 After changing configuration:
@@ -473,8 +388,8 @@ The Docker runtime includes several production-oriented safeguards.
 
 * Automatic container restart policy
 * Retry and backoff support
-* Tool execution timeout protection
-* Recovery and replanning flow
+* Tool execution timeouts
+* Bounded agent loop
 
 ## Dependency Management
 
@@ -514,10 +429,10 @@ The project includes tests for:
 * API endpoints
 * Configuration validation
 * Models
-* Planner
+* Agent loop
 * Generator
 * Executor
-* Pipeline
+* End-to-end API flows
 * Tool Registry
 * Tool Validator
 * Calculator
@@ -541,13 +456,13 @@ Production Docker images intentionally exclude development and test dependencies
 enterprise-ai-agent/
 │
 ├── app/
+│   ├── agent.py            Tool calling loop
 │   ├── api.py              FastAPI endpoints
 │   ├── config.py           Configuration and validation
 │   ├── executor.py         Tool execution logic
 │   ├── generator.py        Ollama integration
+│   ├── logging.py          Request ID logging
 │   ├── models.py           Shared models
-│   ├── pipeline.py         Agent orchestration
-│   ├── planner.py          Tool planning
 │   ├── tool_registry.py    Tool registration
 │   └── tool_validator.py   Tool argument validation
 │
@@ -556,16 +471,20 @@ enterprise-ai-agent/
 │   ├── calculator.py       Calculator tool
 │   └── datetime_tool.py    Date and time tool
 │
+├── docs/
+│   ├── architecture.md
+│   └── deployment.md
+│
 ├── tests/
+│   ├── test_agent.py
 │   ├── test_api.py
 │   ├── test_calculator.py
 │   ├── test_config.py
 │   ├── test_datetime_tool.py
+│   ├── test_e2e.py
 │   ├── test_executor.py
 │   ├── test_generator.py
 │   ├── test_models.py
-│   ├── test_pipeline.py
-│   ├── test_planner.py
 │   ├── test_tool_registry.py
 │   └── test_tool_validator.py
 │
@@ -595,7 +514,15 @@ It does not currently include:
 * Conversation persistence
 * Web-based UI
 
-The architecture is designed so these capabilities can be introduced as additional tools or services without changing the core planner/executor flow.
+The architecture is designed so these capabilities can be introduced as additional tools or services without changing the agent loop.
+
+---
+
+# Known Limitations
+
+* **Model reasoning.** The loop supports chaining tools, and this is covered by tests, but a 7B model does not always use it. In local runs `qwen2.5:7b` tended to do date arithmetic itself after calling `datetime` instead of passing the dates to the calculator, and answered "How many days are left until New Year's Eve?" inconsistently. A larger model or a dedicated date tool would help; an evaluation suite would measure it.
+* **Unverified final steps.** After a tool error, the model sometimes states the corrected result without calling the tool again. Its answers for `2^10` were correct, but the value was not computed by the tool in that run.
+* **Thread-based timeouts.** A timed-out tool keeps running in its worker thread. Tools bound their own work, but full isolation would need a separate process per call.
 
 ---
 
@@ -603,14 +530,14 @@ The architecture is designed so these capabilities can be introduced as addition
 
 Possible next steps include:
 
-* Document search as an agent tool
-* Agentic RAG workflows
+* Document search as an agent tool (Agentic RAG)
 * Additional external API tools
 * Authentication and authorization
 * Conversation memory
 * Streaming responses
 * Tracing and observability
-* Evaluation and benchmark integration
+* An evaluation suite for tool selection and answer accuracy
+* Process-isolated tool execution
 
 ---
 
