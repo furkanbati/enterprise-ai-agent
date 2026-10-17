@@ -1,4 +1,3 @@
-```gitignore
 # Python
 __pycache__/
 *.py[cod]
@@ -50,4 +49,3 @@ docker-compose.override.yml
 
 # Jupyter
 .ipynb_checkpoints/
-```

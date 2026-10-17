@@ -154,6 +154,8 @@ Answer
 
 The pipeline supports bounded replanning rather than endlessly retrying failed execution.
 
+Replanning is used for failures the model can fix, such as a malformed expression. When a tool rejects a request it cannot fulfil, for example a result that exceeds the calculator's size limit, the pipeline explains the failure instead of replanning, so the model cannot change the user's numbers to produce an answer.
+
 ---
 
 # Components
@@ -180,7 +182,7 @@ The pipeline supports bounded replanning rather than endlessly retrying failed e
 ## Executor
 
 * Executes tools
-* Applies retries and timeouts
+* Applies timeouts and retries connection failures
 * Isolates tool execution failures
 
 ## Generator
@@ -213,9 +215,9 @@ The pipeline supports bounded replanning rather than endlessly retrying failed e
 
 ## Reliability
 
-* LLM retry and backoff
-* Tool retry support
-* Tool execution timeout protection
+* LLM request timeouts, retry and backoff
+* Tool retries for connection failures
+* Tool execution timeouts (timed-out calls are not retried)
 * Exception isolation
 * Recovery and replanning flow
 
@@ -257,6 +259,10 @@ The current implementation intentionally keeps the tool set small and focused.
 ## Calculator
 
 Evaluates mathematical expressions through a restricted expression evaluator.
+
+Supported: numbers, `+ - * / // % **`, parentheses, `abs`, `round`, `min`, `max`, `int`, `float`, `sqrt`, `pi`, and `e`.
+
+Integer results are limited to 1,000 digits. Oversized operations are rejected before they are computed, so a single expression cannot occupy a CPU core.
 
 Example:
 
@@ -423,8 +429,10 @@ The application is configured through environment variables.
 | GENERATOR_MAX_RETRIES | 3                      | Maximum LLM retry attempts        |
 | EXECUTOR_MAX_RETRIES  | 2                      | Maximum tool retry attempts       |
 | PIPELINE_MAX_REPLANS  | 2                      | Maximum replanning attempts       |
+| PLANNER_MAX_RETRIES   | 1                      | Retries for invalid planner output |
 | RETRY_BASE_DELAY      | 1.0                    | Initial retry delay in seconds    |
 | TOOL_TIMEOUT          | 5.0                    | Tool execution timeout in seconds |
+| GENERATOR_TIMEOUT     | 120.0                  | LLM request timeout in seconds    |
 
 Example:
 

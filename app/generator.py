@@ -8,6 +8,7 @@ from prometheus_client import Counter
 from app.config import (
     CHAT_MODEL,
     GENERATOR_MAX_RETRIES,
+    GENERATOR_TIMEOUT,
     OLLAMA_HOST,
     RETRY_BASE_DELAY,
 )
@@ -30,7 +31,7 @@ class Generator:
         model: str = CHAT_MODEL,
         max_retries: int = GENERATOR_MAX_RETRIES,
         retry_base_delay: float = RETRY_BASE_DELAY,
-        timeout: float | None = None,
+        timeout: float | None = GENERATOR_TIMEOUT,
     ):
         self.client = Client(
             host=host,
