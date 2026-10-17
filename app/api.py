@@ -14,6 +14,7 @@ from app.generator import Generator
 from app.logging import (
     configure_logging,
     generate_request_id,
+    get_request_id,
     reset_request_id,
     set_request_id,
 )
@@ -93,13 +94,23 @@ async def unexpected_exception_handler(
     request: Request,
     exc: Exception,
 ):
-    request_id = get_request_id()
-
-    logger.exception(
-        "Unhandled exception on %s %s",
-        request.method,
-        request.url.path,
+    # The request ID middleware resets its context variable before this
+    # handler runs, so read the ID it stored on the request state instead.
+    request_id = getattr(
+        request.state,
+        "request_id",
+        get_request_id(),
     )
+    token = set_request_id(request_id)
+
+    try:
+        logger.exception(
+            "Unhandled exception on %s %s",
+            request.method,
+            request.url.path,
+        )
+    finally:
+        reset_request_id(token)
 
     return JSONResponse(
         status_code=500,
@@ -119,6 +130,7 @@ async def request_id_middleware(
     call_next,
 ):
     request_id = generate_request_id()
+    request.state.request_id = request_id
     token = set_request_id(request_id)
 
     start_time = time.perf_counter()

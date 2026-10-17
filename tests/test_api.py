@@ -187,6 +187,13 @@ def test_chat_returns_internal_server_error_for_unexpected_exception(
     assert "internal implementation failure" not in response.text
     assert "Traceback" not in response.text
 
+    body = response.json()
+    assert body["detail"] == "An unexpected error occurred."
+
+    request_id = response.headers["X-Request-ID"]
+    assert len(request_id) == 32
+    assert body["request_id"] == request_id
+
 def test_chat_rejects_blank_question():
     client = TestClient(api.app)
 
