@@ -23,6 +23,7 @@ from evaluation.report import write_reports
 from evaluation.runner import Evaluator, RunRecord
 from evaluation.tools import EVALUATION_NOW, FixedDateTimeTool
 from tools.calculator import CalculatorTool
+from tools.date_diff import DateDiffTool
 
 
 DEFAULT_DATASET = Path(__file__).parent / "datasets" / "agent_cases.jsonl"
@@ -67,7 +68,9 @@ def main() -> None:
             f"Pull it first: ollama pull {args.model}"
         )
 
-    registry = ToolRegistry([CalculatorTool(), FixedDateTimeTool()])
+    registry = ToolRegistry(
+        [CalculatorTool(), FixedDateTimeTool(), DateDiffTool()]
+    )
     agent = Agent(
         generator=generator,
         executor=Executor(registry),
