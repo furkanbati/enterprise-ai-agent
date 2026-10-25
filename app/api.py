@@ -2,16 +2,18 @@
 import logging
 import time
 
-import httpx
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import JSONResponse
-from ollama import ResponseError
 from prometheus_client import Counter, Histogram, make_asgi_app
 from pydantic import BaseModel, Field, field_validator
 
 from app.agent import Agent
 from app.executor import Executor
-from app.generator import Generator
+from app.generator import (
+    Generator,
+    GeneratorResponseError,
+    GeneratorUnavailableError,
+)
 from app.logging import (
     configure_logging,
     generate_request_id,
@@ -213,21 +215,14 @@ def chat(request: ChatRequest):
     try:
         result: AgentResult = agent.run(request.question)
 
-    except ConnectionError as exc:
-        logger.exception("AI service connection failed")
+    except GeneratorUnavailableError as exc:
+        logger.exception("AI service is unavailable")
         raise HTTPException(
             status_code=503,
             detail="The AI service is temporarily unavailable.",
         ) from exc
 
-    except httpx.TimeoutException as exc:
-        logger.exception("AI service request timed out")
-        raise HTTPException(
-            status_code=503,
-            detail="The AI service is temporarily unavailable.",
-        ) from exc
-
-    except (ResponseError, ValueError) as exc:
+    except GeneratorResponseError as exc:
         logger.exception("AI service returned an invalid response")
         raise HTTPException(
             status_code=502,
