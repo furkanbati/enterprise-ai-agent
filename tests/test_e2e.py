@@ -41,6 +41,7 @@ def step(expression, result=None, error=None):
         "success": error is None,
         "result": result,
         "error": error,
+        "rejected": False,
     }
 
 
@@ -96,7 +97,7 @@ def test_chat_e2e_without_tool(monkeypatch):
 
 def test_chat_validation_does_not_reach_agent(monkeypatch):
     class AgentMustNotBeCalled:
-        def run(self, question):
+        def run(self, question, history=None):
             raise AssertionError(
                 "Agent must not be called for invalid input."
             )
@@ -157,3 +158,18 @@ def test_chat_e2e_returns_failure_after_step_limit(monkeypatch):
         "steps": [step("1 / 0", error="division by zero")]
         * api.agent.max_steps,
     }
+
+
+def test_chat_e2e_marks_rejected_steps(monkeypatch):
+    agent = build_test_agent(
+        [
+            calculator_call("2 ** 5000000"),
+            ChatMessage(content="That number is too large to calculate."),
+        ]
+    )
+
+    response = post_question(monkeypatch, agent, "What is 2 ** 5000000?")
+
+    [rejected_step] = response.json()["steps"]
+    assert rejected_step["success"] is False
+    assert rejected_step["rejected"] is True
