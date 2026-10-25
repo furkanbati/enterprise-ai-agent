@@ -121,20 +121,22 @@ The calculator rejects `^`, and the error goes back to the model, which fixes th
       "arguments": {"expression": "2^10"},
       "success": false,
       "result": null,
-      "error": "Unsupported expression. Use numbers, + - * / // % **, parentheses, and abs, round, min, max, int, float, sqrt, pi or e."
+      "error": "Unsupported expression. Use numbers, + - * / // % **, parentheses, and abs, round, min, max, int, float, sqrt, pi or e.",
+      "rejected": false
     },
     {
       "tool": "calculator",
       "arguments": {"expression": "2**10"},
       "success": true,
       "result": 1024,
-      "error": null
+      "error": null,
+      "rejected": false
     }
   ]
 }
 ```
 
-`steps` lists every tool call in order. `tool`, `arguments`, `tool_result` and `error` describe the last call, so clients written for single-tool answers keep working.
+`steps` lists every tool call in order; `rejected` is true when a tool refused the request (see Safeguards). `tool`, `arguments`, `tool_result` and `error` describe the last call, so clients written for single-tool answers keep working.
 
 ---
 
@@ -298,11 +300,32 @@ Verify that the containers are running:
 docker compose ps
 ```
 
-The API will be available at:
+The demo UI and the API will be available at:
 
 ```text
 http://localhost:8000
 ```
+
+---
+
+# Demo UI
+
+Opening `http://localhost:8000` shows a chat UI for the Perwatt Electronics support scenario (Perwatt is a fictional store).
+
+* **Chat** with sample questions to start from. The conversation is multi-turn: the agent can ask which customer is meant, and the answer reaches it.
+* **Agent trace** panel: every tool call of an answer, with its arguments, result, and whether it succeeded, failed or was rejected.
+* **Demo data** panel: the customers and orders the agent works on. Clicking an ID inserts it into the question.
+* **Reset demo** restores the demo data and removes the tickets opened since.
+* The provider and model in use are shown in the header.
+
+The UI is a single HTML file ([`app/static/index.html`](app/static/index.html)) with plain JavaScript, served by FastAPI. It needs no build step, no extra container and no dependencies. It calls the same endpoints any other client would:
+
+| Endpoint | Purpose |
+|---|---|
+| `POST /chat` | Ask a question, with the earlier turns in `history` |
+| `GET /info` | Provider and model |
+| `GET /demo/customers`, `GET /demo/orders` | Read-only demo data |
+| `POST /demo/reset` | Restore the demo data |
 
 ---
 
@@ -385,6 +408,22 @@ Example response:
 ```
 
 The `steps` list makes every tool call observable through the API.
+
+## Conversations
+
+The API is stateless: the client keeps the conversation and sends the earlier turns in `history`, oldest first. Only user questions and assistant answers are sent; the model calls the tools again when it needs earlier results.
+
+```json
+{
+  "question": "Elif Yılmaz.",
+  "history": [
+    {"role": "user", "content": "Show me the orders of Elif."},
+    {"role": "assistant", "content": "Two customers are called Elif: Elif Yılmaz (CUS-1001) and Elif Demir (CUS-1006). Which one do you mean?"}
+  ]
+}
+```
+
+`history` holds at most 10 messages and 20,000 characters, each message at most 4,000 characters. Roles other than `user` and `assistant` are rejected, so a client cannot inject system or tool messages.
 
 ---
 
@@ -556,6 +595,7 @@ enterprise-ai-agent/
 │   ├── logging.py          Request ID logging
 │   ├── models.py           Shared models
 │   ├── providers/          Ollama, OpenAI and Anthropic adapters
+│   ├── static/index.html   Demo chat UI
 │   ├── tool_registry.py    Tool registration
 │   └── tool_validator.py   Tool argument validation
 │
@@ -624,8 +664,7 @@ The support scenario runs on demo data in SQLite. It does not currently include:
 * Connectors to real systems (CRM, order management, ticketing)
 * Document retrieval over real policy documents
 * Authentication and authorization
-* Conversation persistence
-* Web-based UI
+* Conversation persistence on the server (the client keeps the conversation)
 
 The architecture is designed so these capabilities can be introduced as additional tools or services without changing the agent loop.
 
@@ -764,7 +803,6 @@ Possible next steps include:
 * Document search over real policy documents (Agentic RAG)
 * Connectors to real CRM, order and ticketing systems
 * Authentication and authorization
-* Conversation memory
 * Streaming responses
 * Tracing and observability
 * Fallback parsing for tool calls written as text, then a re-run of the llama3.1 comparison

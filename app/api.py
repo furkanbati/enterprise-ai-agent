@@ -1,11 +1,14 @@
 
 import logging
 import time
+from pathlib import Path
+
+from typing import Literal
 
 from fastapi import FastAPI, HTTPException, Request
-from fastapi.responses import JSONResponse
+from fastapi.responses import FileResponse, JSONResponse
 from prometheus_client import Counter, Histogram, make_asgi_app
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 from app.agent import Agent
 from app.config import BUSINESS_DB_PATH
@@ -40,6 +43,8 @@ app = FastAPI(
 
 logger = logging.getLogger(__name__)
 
+DEMO_PAGE = Path(__file__).parent / "static" / "index.html"
+
 
 HTTP_REQUESTS_TOTAL = Counter(
     "agent_http_requests_total",
@@ -54,8 +59,34 @@ HTTP_REQUEST_DURATION = Histogram(
 )
 
 
+MAX_HISTORY_MESSAGES = 10
+
+MAX_HISTORY_CHARS = 20_000
+
+
+class HistoryMessage(BaseModel):
+    role: Literal["user", "assistant"]
+    content: str = Field(max_length=4_000)
+
+    @field_validator("content")
+    @classmethod
+    def normalize_content(cls, value: str) -> str:
+        content = value.strip()
+
+        if not content:
+            raise ValueError("History messages cannot be blank.")
+
+        return content
+
+
 class ChatRequest(BaseModel):
     question: str = Field(max_length=4_000)
+    # Earlier turns of the conversation, oldest first. The client keeps the
+    # conversation; the server stores nothing between requests.
+    history: list[HistoryMessage] = Field(
+        default_factory=list,
+        max_length=MAX_HISTORY_MESSAGES,
+    )
 
     @field_validator("question")
     @classmethod
@@ -67,6 +98,15 @@ class ChatRequest(BaseModel):
 
         return question
 
+    @model_validator(mode="after")
+    def limit_history_size(self):
+        if sum(len(message.content) for message in self.history) > MAX_HISTORY_CHARS:
+            raise ValueError(
+                f"History cannot exceed {MAX_HISTORY_CHARS} characters in total."
+            )
+
+        return self
+
 
 class StepResponse(BaseModel):
     tool: str
@@ -74,6 +114,8 @@ class StepResponse(BaseModel):
     success: bool
     result: object | None = None
     error: str | None = None
+    # True when the tool refused the request (ToolRequestRejected).
+    rejected: bool = False
 
 
 class ChatResponse(BaseModel):
@@ -216,10 +258,49 @@ def ready():
     return {"status": "ready"}
 
 
+@app.get("/", include_in_schema=False)
+def demo_page():
+    """The demo chat UI: a single HTML page that calls the API below."""
+
+    return FileResponse(DEMO_PAGE)
+
+
+@app.get("/info")
+def info():
+    """The provider and model behind the agent, for the demo UI."""
+
+    return {
+        "provider": generator.provider.name,
+        "model": generator.model,
+    }
+
+
+@app.get("/demo/customers")
+def demo_customers():
+    return {"customers": store.list_customers()}
+
+
+@app.get("/demo/orders")
+def demo_orders():
+    return {"orders": store.list_all_orders()}
+
+
+@app.post("/demo/reset")
+def demo_reset():
+    """Restore the demo data and remove the tickets opened since."""
+
+    store.reset()
+
+    return {"status": "reset"}
+
+
 @app.post("/chat", response_model=ChatResponse)
 def chat(request: ChatRequest):
     try:
-        result: AgentResult = agent.run(request.question)
+        result: AgentResult = agent.run(
+            request.question,
+            history=[message.model_dump() for message in request.history],
+        )
 
     except GeneratorUnavailableError as exc:
         logger.exception("AI service is unavailable")
@@ -248,6 +329,7 @@ def chat(request: ChatRequest):
                 success=step.success,
                 result=step.result,
                 error=step.error,
+                rejected=step.rejected,
             )
             for step in result.steps
         ],

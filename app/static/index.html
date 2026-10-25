@@ -1,0 +1,886 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Perwatt Electronics · Support Agent</title>
+<style>
+  :root {
+    --bg: #f6f7f9;
+    --surface: #ffffff;
+    --surface-2: #f0f2f5;
+    --border: #dfe3e8;
+    --text: #1b1f24;
+    --muted: #5d6673;
+    --accent: #e8890c;
+    --accent-ink: #ffffff;
+    --accent-soft: #fdf1e1;
+    --user-bubble: #1f2a37;
+    --user-ink: #ffffff;
+    --ok: #1a7f4b;
+    --ok-soft: #e3f4ea;
+    --err: #b42318;
+    --err-soft: #fde8e7;
+    --warn: #9a5b00;
+    --warn-soft: #fff3d6;
+    --code: #f3f4f6;
+    --shadow: 0 1px 2px rgba(16, 24, 40, .06), 0 1px 3px rgba(16, 24, 40, .08);
+    --radius: 12px;
+    --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #0f1216;
+      --surface: #171b21;
+      --surface-2: #1e232b;
+      --border: #2b323c;
+      --text: #e7eaee;
+      --muted: #9aa4b1;
+      --accent: #f5a524;
+      --accent-ink: #1b1f24;
+      --accent-soft: #2e2414;
+      --user-bubble: #2b3644;
+      --user-ink: #f2f4f7;
+      --ok: #4cc38a;
+      --ok-soft: #12291d;
+      --err: #f97066;
+      --err-soft: #2f1513;
+      --warn: #f5b546;
+      --warn-soft: #2c2310;
+      --code: #11151a;
+      --shadow: none;
+    }
+  }
+
+  * { box-sizing: border-box; }
+
+  html, body { height: 100%; }
+
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font: 15px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  }
+
+  button { font: inherit; cursor: pointer; }
+
+  .app {
+    display: grid;
+    grid-template-rows: auto 1fr;
+    height: 100vh;
+    height: 100dvh;
+  }
+
+  /* --- header --------------------------------------------------------- */
+
+  header {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 12px 20px;
+    background: var(--surface);
+    border-bottom: 1px solid var(--border);
+  }
+
+  .logo {
+    display: grid;
+    place-items: center;
+    width: 34px;
+    height: 34px;
+    border-radius: 9px;
+    background: var(--accent);
+    color: var(--accent-ink);
+    font-weight: 800;
+  }
+
+  .brand { display: flex; flex-direction: column; line-height: 1.2; }
+  .brand strong { font-size: 16px; }
+  .brand span { color: var(--muted); font-size: 13px; }
+
+  .spacer { flex: 1; }
+
+  .badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 4px 10px;
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    color: var(--muted);
+    font-size: 13px;
+    white-space: nowrap;
+  }
+
+  .badge .dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--muted);
+  }
+
+  .badge.ready .dot { background: var(--ok); }
+  .badge.down .dot { background: var(--err); }
+
+  .button {
+    padding: 6px 12px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--surface);
+    color: var(--text);
+  }
+
+  .button:hover { background: var(--surface-2); }
+
+  /* --- layout --------------------------------------------------------- */
+
+  main {
+    display: grid;
+    grid-template-columns: minmax(0, 1.35fr) minmax(0, 1fr);
+    gap: 16px;
+    min-height: 0;
+    padding: 16px;
+  }
+
+  .panel {
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    box-shadow: var(--shadow);
+    overflow: hidden;
+  }
+
+  /* --- chat ----------------------------------------------------------- */
+
+  .messages {
+    flex: 1;
+    overflow-y: auto;
+    padding: 20px;
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+  }
+
+  .welcome h1 { margin: 0 0 6px; font-size: 20px; }
+  .welcome p { margin: 0 0 14px; color: var(--muted); }
+
+  .samples { display: flex; flex-wrap: wrap; gap: 8px; }
+
+  .sample {
+    padding: 8px 12px;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    background: var(--surface-2);
+    color: var(--text);
+    text-align: left;
+    font-size: 14px;
+  }
+
+  .sample:hover { border-color: var(--accent); }
+
+  .message { display: flex; flex-direction: column; max-width: 85%; }
+  .message.user { align-self: flex-end; align-items: flex-end; }
+  .message.assistant { align-self: flex-start; }
+
+  .bubble {
+    padding: 10px 14px;
+    border-radius: 14px;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+  }
+
+  .user .bubble {
+    background: var(--user-bubble);
+    color: var(--user-ink);
+    border-bottom-right-radius: 4px;
+  }
+
+  .assistant .bubble {
+    background: var(--surface-2);
+    border-bottom-left-radius: 4px;
+  }
+
+  .assistant.error .bubble {
+    background: var(--err-soft);
+    color: var(--err);
+  }
+
+  .meta {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    margin-top: 4px;
+    color: var(--muted);
+    font-size: 12px;
+  }
+
+  .link {
+    padding: 0;
+    border: 0;
+    background: none;
+    color: var(--accent);
+    font-size: 12px;
+  }
+
+  .link:hover { text-decoration: underline; }
+
+  .message.selected .bubble { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+  .typing { display: inline-flex; gap: 4px; padding: 14px; }
+
+  .typing span {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: var(--muted);
+    animation: blink 1.2s infinite ease-in-out;
+  }
+
+  .typing span:nth-child(2) { animation-delay: .2s; }
+  .typing span:nth-child(3) { animation-delay: .4s; }
+
+  @keyframes blink { 0%, 80%, 100% { opacity: .25; } 40% { opacity: 1; } }
+
+  .composer {
+    display: flex;
+    gap: 8px;
+    padding: 12px;
+    border-top: 1px solid var(--border);
+  }
+
+  .composer textarea {
+    flex: 1;
+    min-height: 44px;
+    max-height: 160px;
+    padding: 10px 12px;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    background: var(--bg);
+    color: var(--text);
+    font: inherit;
+    resize: none;
+  }
+
+  .composer textarea:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
+
+  .send {
+    padding: 0 18px;
+    border: 0;
+    border-radius: 10px;
+    background: var(--accent);
+    color: var(--accent-ink);
+    font-weight: 600;
+  }
+
+  .send:disabled { opacity: .5; cursor: default; }
+
+  /* --- side panel ----------------------------------------------------- */
+
+  .tabs { display: flex; border-bottom: 1px solid var(--border); }
+
+  .tab {
+    flex: 1;
+    padding: 12px;
+    border: 0;
+    border-bottom: 2px solid transparent;
+    background: none;
+    color: var(--muted);
+    font-weight: 600;
+  }
+
+  .tab[aria-selected="true"] { color: var(--text); border-bottom-color: var(--accent); }
+
+  .tab-body { flex: 1; overflow-y: auto; padding: 16px; }
+
+  .hint { color: var(--muted); font-size: 14px; }
+
+  .trace-question {
+    margin: 0 0 12px;
+    color: var(--muted);
+    font-size: 13px;
+  }
+
+  .trace-question strong { color: var(--text); }
+
+  .step {
+    margin-bottom: 10px;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    overflow: hidden;
+  }
+
+  .step-head {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 12px;
+    background: var(--surface-2);
+  }
+
+  .step-index {
+    display: grid;
+    place-items: center;
+    width: 22px;
+    height: 22px;
+    border-radius: 50%;
+    background: var(--border);
+    font-size: 12px;
+    font-weight: 700;
+  }
+
+  .step-name { font-family: var(--mono); font-weight: 600; font-size: 13px; }
+
+  .pill {
+    margin-left: auto;
+    padding: 2px 8px;
+    border-radius: 999px;
+    font-size: 12px;
+    font-weight: 600;
+  }
+
+  .pill.ok { background: var(--ok-soft); color: var(--ok); }
+  .pill.error { background: var(--err-soft); color: var(--err); }
+  .pill.rejected { background: var(--warn-soft); color: var(--warn); }
+
+  .step-body { padding: 10px 12px; display: grid; gap: 8px; }
+
+  .label {
+    color: var(--muted);
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: .04em;
+    text-transform: uppercase;
+  }
+
+  pre {
+    margin: 4px 0 0;
+    padding: 8px 10px;
+    border-radius: 8px;
+    background: var(--code);
+    font: 12px/1.45 var(--mono);
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+    max-height: 260px;
+    overflow-y: auto;
+  }
+
+  details summary { cursor: pointer; }
+
+  .step-error { color: var(--err); font-size: 13px; }
+
+  .no-tools {
+    padding: 12px;
+    border: 1px dashed var(--border);
+    border-radius: 10px;
+    color: var(--muted);
+    font-size: 14px;
+  }
+
+  /* --- demo data ------------------------------------------------------ */
+
+  .data-section { margin-bottom: 18px; }
+  .data-section h3 { margin: 0 0 8px; font-size: 14px; }
+
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+
+  th, td {
+    padding: 6px 8px;
+    border-bottom: 1px solid var(--border);
+    text-align: left;
+    vertical-align: top;
+  }
+
+  /* Long email addresses may break anywhere; other cells wrap at spaces. */
+  .email { word-break: break-all; }
+
+  th { color: var(--muted); font-weight: 600; }
+
+  .id {
+    padding: 0;
+    border: 0;
+    background: none;
+    color: var(--accent);
+    font-family: var(--mono);
+    font-size: 12px;
+    white-space: nowrap;
+  }
+
+  .status { white-space: nowrap; }
+
+  .toast {
+    position: fixed;
+    left: 50%;
+    bottom: 24px;
+    transform: translateX(-50%);
+    padding: 10px 16px;
+    border-radius: 10px;
+    background: var(--user-bubble);
+    color: var(--user-ink);
+    font-size: 14px;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity .2s;
+  }
+
+  .toast.show { opacity: 1; }
+
+  /* --- small screens -------------------------------------------------- */
+
+  @media (max-width: 860px) {
+    .app { height: auto; min-height: 100vh; }
+    main { grid-template-columns: 1fr; padding: 12px; }
+    .chat { height: 75vh; height: 75dvh; }
+    .side { max-height: 80vh; }
+    header { flex-wrap: wrap; padding: 10px 16px; }
+    .brand span { display: none; }
+    .message { max-width: 92%; }
+  }
+</style>
+</head>
+<body>
+<div class="app">
+  <header>
+    <div class="logo" aria-hidden="true">P</div>
+    <div class="brand">
+      <strong>Perwatt Electronics</strong>
+      <span>AI customer support agent · demo</span>
+    </div>
+    <div class="spacer"></div>
+    <span class="badge" id="model-badge"><span class="dot"></span><span id="model-text">Connecting…</span></span>
+    <button class="button" id="reset" type="button" title="Restore the demo data and start a new conversation">Reset demo</button>
+  </header>
+
+  <main>
+    <section class="panel chat" aria-label="Conversation">
+      <div class="messages" id="messages" aria-live="polite">
+        <div class="welcome" id="welcome">
+          <h1>Ask the support agent</h1>
+          <p>It looks up customers and orders, checks shipping and return status, answers from the store's policies and opens support tickets. Every tool call is shown in the Agent trace panel.</p>
+          <div class="samples" id="samples"></div>
+        </div>
+      </div>
+      <form class="composer" id="composer">
+        <textarea id="input" rows="1" maxlength="4000" placeholder="Ask a support question…" aria-label="Your question"></textarea>
+        <button class="send" id="send" type="submit">Send</button>
+      </form>
+    </section>
+
+    <section class="panel side" aria-label="Details">
+      <div class="tabs" role="tablist">
+        <button class="tab" role="tab" id="tab-trace" aria-selected="true" aria-controls="trace" type="button">Agent trace</button>
+        <button class="tab" role="tab" id="tab-data" aria-selected="false" aria-controls="data" type="button">Demo data</button>
+      </div>
+      <div class="tab-body" id="trace" role="tabpanel" aria-labelledby="tab-trace">
+        <p class="hint">Send a question to see which tools the agent calls, with their arguments and results.</p>
+      </div>
+      <div class="tab-body" id="data" role="tabpanel" aria-labelledby="tab-data" hidden>
+        <p class="hint">Loading demo data…</p>
+      </div>
+    </section>
+  </main>
+</div>
+
+<div class="toast" id="toast" role="status"></div>
+
+<script>
+  "use strict";
+
+  // Must match the limits of the /chat endpoint.
+  const MAX_HISTORY_MESSAGES = 10;
+  const MAX_HISTORY_CHARS = 20000;
+  const MAX_MESSAGE_CHARS = 4000;
+
+  const SAMPLE_QUESTIONS = [
+    "The customer elif.yilmaz@example.com says her headphones haven't arrived. Look into it and open a ticket.",
+    "Can the customer still return order ORD-5002?",
+    "Daniel Weber wants to return his keyboard. Until when can he do that?",
+    "Can a customer cancel an order that has already shipped?",
+    "Show me the orders of Elif.",
+    "What is 15% of the total of order ORD-5004?",
+  ];
+
+  const ERROR_MESSAGES = {
+    502: "The AI service returned an invalid response.",
+    503: "The AI service is temporarily unavailable.",
+    422: "The question could not be sent. It may be too long.",
+  };
+
+  const state = {
+    // {role, content} pairs sent back to the API as conversation history.
+    history: [],
+    turns: [],
+    busy: false,
+  };
+
+  const $ = (id) => document.getElementById(id);
+  const messagesEl = $("messages");
+  const inputEl = $("input");
+  const sendEl = $("send");
+
+  function el(tag, attributes = {}, children = []) {
+    const node = document.createElement(tag);
+
+    for (const [key, value] of Object.entries(attributes)) {
+      if (key === "class") node.className = value;
+      else if (key === "text") node.textContent = value;
+      else if (key.startsWith("on")) node.addEventListener(key.slice(2), value);
+      else node.setAttribute(key, value);
+    }
+
+    for (const child of [].concat(children)) {
+      if (child != null) node.append(child);
+    }
+
+    return node;
+  }
+
+  function scrollToBottom() {
+    messagesEl.scrollTop = messagesEl.scrollHeight;
+  }
+
+  function showToast(text) {
+    const toast = $("toast");
+    toast.textContent = text;
+    toast.classList.add("show");
+    clearTimeout(showToast.timer);
+    showToast.timer = setTimeout(() => toast.classList.remove("show"), 2500);
+  }
+
+  function pretty(value) {
+    if (typeof value === "string") return value;
+    return JSON.stringify(value, null, 2);
+  }
+
+  // --- conversation ------------------------------------------------------
+
+  function historyForRequest() {
+    // The most recent messages that fit the API's limits, oldest first.
+    const selected = [];
+    let chars = 0;
+
+    for (const message of [...state.history].reverse()) {
+      const content = message.content.slice(0, MAX_MESSAGE_CHARS);
+
+      if (selected.length === MAX_HISTORY_MESSAGES) break;
+      if (chars + content.length > MAX_HISTORY_CHARS) break;
+
+      selected.unshift({ role: message.role, content });
+      chars += content.length;
+    }
+
+    return selected;
+  }
+
+  function addUserMessage(text) {
+    $("welcome")?.remove();
+    messagesEl.append(
+      el("div", { class: "message user" }, el("div", { class: "bubble", text }))
+    );
+    scrollToBottom();
+  }
+
+  function addTyping() {
+    const node = el("div", { class: "message assistant", "aria-label": "The agent is working" },
+      el("div", { class: "bubble typing" }, [el("span"), el("span"), el("span")]));
+    messagesEl.append(node);
+    scrollToBottom();
+    return node;
+  }
+
+  function addAnswer(turn) {
+    const count = turn.steps.length;
+    const toolsLabel = count === 0 ? "no tool calls" : `${count} tool call${count === 1 ? "" : "s"}`;
+
+    const node = el("div", { class: "message assistant" }, [
+      el("div", { class: "bubble", text: turn.answer }),
+      el("div", { class: "meta" }, [
+        el("span", { text: `${(turn.ms / 1000).toFixed(1)} s` }),
+        el("span", { text: "·" }),
+        el("button", {
+          class: "link",
+          type: "button",
+          text: toolsLabel,
+          onclick: () => selectTurn(turn),
+        }),
+      ]),
+    ]);
+
+    turn.node = node;
+    messagesEl.append(node);
+    scrollToBottom();
+  }
+
+  function addError(question, status) {
+    const text = ERROR_MESSAGES[status] || "Something went wrong. Please try again.";
+
+    const node = el("div", { class: "message assistant error" }, [
+      el("div", { class: "bubble", text }),
+      el("div", { class: "meta" }, el("button", {
+        class: "link",
+        type: "button",
+        text: "Retry",
+        onclick: () => {
+          node.remove();
+          send(question, { retry: true });
+        },
+      })),
+    ]);
+
+    messagesEl.append(node);
+    scrollToBottom();
+  }
+
+  async function send(question, { retry = false } = {}) {
+    question = question.trim();
+
+    if (!question || state.busy) return;
+
+    state.busy = true;
+    sendEl.disabled = true;
+
+    if (!retry) addUserMessage(question);
+
+    const typing = addTyping();
+    const started = performance.now();
+
+    try {
+      const response = await fetch("/chat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ question, history: historyForRequest() }),
+      });
+
+      typing.remove();
+
+      if (!response.ok) {
+        addError(question, response.status);
+        return;
+      }
+
+      const data = await response.json();
+      const turn = {
+        question,
+        answer: data.answer,
+        steps: data.steps || [],
+        ms: performance.now() - started,
+      };
+
+      state.turns.push(turn);
+      state.history.push(
+        { role: "user", content: question },
+        { role: "assistant", content: data.answer },
+      );
+
+      addAnswer(turn);
+      selectTurn(turn);
+    } catch (error) {
+      typing.remove();
+      addError(question, 0);
+    } finally {
+      state.busy = false;
+      sendEl.disabled = false;
+      inputEl.focus();
+    }
+  }
+
+  // --- trace -------------------------------------------------------------
+
+  function selectTurn(turn) {
+    for (const other of state.turns) other.node?.classList.toggle("selected", other === turn);
+
+    const trace = $("trace");
+    trace.replaceChildren(
+      el("p", { class: "trace-question" }, [
+        "Question: ",
+        el("strong", { text: turn.question }),
+      ])
+    );
+
+    if (turn.steps.length === 0) {
+      trace.append(el("div", { class: "no-tools", text: "The agent answered without calling a tool." }));
+    }
+
+    turn.steps.forEach((step, index) => trace.append(renderStep(step, index)));
+
+    showTab("trace");
+  }
+
+  function renderStep(step, index) {
+    const [pillClass, pillText] = step.rejected
+      ? ["rejected", "rejected"]
+      : step.success ? ["ok", "success"] : ["error", "error"];
+
+    const body = el("div", { class: "step-body" }, [
+      el("div", {}, [
+        el("div", { class: "label", text: "Arguments" }),
+        el("pre", { text: pretty(step.arguments) }),
+      ]),
+    ]);
+
+    if (step.success) {
+      body.append(el("details", {}, [
+        el("summary", { class: "label", text: "Result" }),
+        el("pre", { text: pretty(step.result) }),
+      ]));
+    } else {
+      body.append(el("div", {}, [
+        el("div", { class: "label", text: step.rejected ? "Rejected" : "Error" }),
+        el("div", { class: "step-error", text: step.error || "" }),
+      ]));
+    }
+
+    return el("div", { class: "step" }, [
+      el("div", { class: "step-head" }, [
+        el("span", { class: "step-index", text: String(index + 1) }),
+        el("span", { class: "step-name", text: step.tool }),
+        el("span", { class: `pill ${pillClass}`, text: pillText }),
+      ]),
+      body,
+    ]);
+  }
+
+  // --- tabs --------------------------------------------------------------
+
+  function showTab(name) {
+    for (const tab of ["trace", "data"]) {
+      $(`tab-${tab}`).setAttribute("aria-selected", String(tab === name));
+      $(tab).hidden = tab !== name;
+    }
+  }
+
+  $("tab-trace").addEventListener("click", () => showTab("trace"));
+  $("tab-data").addEventListener("click", () => showTab("data"));
+
+  // --- demo data ---------------------------------------------------------
+
+  function insertIntoInput(text) {
+    const before = inputEl.value && !inputEl.value.endsWith(" ") ? " " : "";
+    inputEl.value += before + text;
+    inputEl.focus();
+  }
+
+  function idButton(id) {
+    return el("button", {
+      class: "id",
+      type: "button",
+      title: "Insert into the question",
+      text: id,
+      onclick: () => insertIntoInput(id),
+    });
+  }
+
+  async function loadDemoData() {
+    const data = $("data");
+
+    try {
+      const [customers, orders] = await Promise.all([
+        fetch("/demo/customers").then((r) => r.json()),
+        fetch("/demo/orders").then((r) => r.json()),
+      ]);
+
+      const customerTable = el("table", {}, [
+        el("thead", {}, el("tr", {}, ["ID", "Name", "Email", "Tier"].map((h) => el("th", { text: h })))),
+        el("tbody", {}, customers.customers.map((c) => el("tr", {}, [
+          el("td", {}, idButton(c.id)),
+          el("td", { text: c.name }),
+          el("td", { class: "email", text: c.email }),
+          el("td", { text: c.tier }),
+        ]))),
+      ]);
+
+      const orderTable = el("table", {}, [
+        el("thead", {}, el("tr", {}, ["Order", "Customer", "Status", "Items", "Total"].map((h) => el("th", { text: h })))),
+        el("tbody", {}, orders.orders.map((o) => el("tr", {}, [
+          el("td", {}, idButton(o.order_id)),
+          el("td", {}, idButton(o.customer_id)),
+          el("td", { class: "status", text: o.status }),
+          el("td", { text: o.items.join(", ") }),
+          el("td", { text: `${o.total.toFixed(2)} ${o.currency}` }),
+        ]))),
+      ]);
+
+      data.replaceChildren(
+        el("p", { class: "hint", text: "Click an ID to insert it into your question. The data resets with “Reset demo”." }),
+        el("div", { class: "data-section" }, [el("h3", { text: "Customers" }), customerTable]),
+        el("div", { class: "data-section" }, [el("h3", { text: "Orders" }), orderTable]),
+      );
+    } catch (error) {
+      data.replaceChildren(el("p", { class: "hint", text: "The demo data could not be loaded." }));
+    }
+  }
+
+  // --- header ------------------------------------------------------------
+
+  async function loadInfo() {
+    const badge = $("model-badge");
+
+    try {
+      const response = await fetch("/info");
+      const info = await response.json();
+      $("model-text").textContent = `${info.provider} · ${info.model}`;
+      badge.classList.add("ready");
+    } catch (error) {
+      $("model-text").textContent = "API unavailable";
+      badge.classList.add("down");
+    }
+  }
+
+  $("reset").addEventListener("click", async () => {
+    if (state.busy) return;
+
+    try {
+      const response = await fetch("/demo/reset", { method: "POST" });
+      if (!response.ok) throw new Error(String(response.status));
+    } catch (error) {
+      showToast("The demo could not be reset.");
+      return;
+    }
+
+    state.history = [];
+    state.turns = [];
+    location.reload();
+  });
+
+  // --- composer ----------------------------------------------------------
+
+  $("composer").addEventListener("submit", (event) => {
+    event.preventDefault();
+    const question = inputEl.value;
+    inputEl.value = "";
+    autoGrow();
+    send(question);
+  });
+
+  inputEl.addEventListener("keydown", (event) => {
+    if (event.key === "Enter" && !event.shiftKey && !event.isComposing) {
+      event.preventDefault();
+      $("composer").requestSubmit();
+    }
+  });
+
+  function autoGrow() {
+    inputEl.style.height = "auto";
+    inputEl.style.height = `${Math.min(inputEl.scrollHeight, 160)}px`;
+  }
+
+  inputEl.addEventListener("input", autoGrow);
+
+  for (const question of SAMPLE_QUESTIONS) {
+    $("samples").append(el("button", {
+      class: "sample",
+      type: "button",
+      text: question,
+      onclick: () => send(question),
+    }));
+  }
+
+  loadInfo();
+  loadDemoData();
+  inputEl.focus();
+</script>
+</body>
+</html>

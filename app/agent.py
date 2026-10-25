@@ -117,11 +117,28 @@ class Agent:
         self.registry = registry
         self.max_steps = max_steps
 
-    def run(self, question: str) -> AgentResult:
+    def run(
+        self,
+        question: str,
+        history: list[dict[str, str]] | None = None,
+    ) -> AgentResult:
+        """Answer a question, optionally continuing an earlier conversation.
+
+        ``history`` holds the earlier user questions and assistant answers
+        as {"role", "content"} dicts, oldest first. The caller keeps the
+        conversation, so the agent stays stateless. Tool calls from
+        earlier turns are not part of the history; the model can call the
+        tools again when it needs their results.
+        """
+
         logger.info("Agent run started")
 
         messages: list[dict[str, Any]] = [
             {"role": "system", "content": SYSTEM_PROMPT},
+            *(
+                {"role": message["role"], "content": message["content"]}
+                for message in history or []
+            ),
             {"role": "user", "content": question},
         ]
         tools = self.registry.tool_schemas()

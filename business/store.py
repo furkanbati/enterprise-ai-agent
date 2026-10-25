@@ -110,6 +110,15 @@ class BusinessStore:
 
         return [dict(row) for row in rows]
 
+    def list_customers(self) -> list[dict[str, Any]]:
+        with self._connect() as connection:
+            rows = connection.execute(
+                "SELECT id, name, email, tier, member_since FROM customers "
+                "ORDER BY id"
+            ).fetchall()
+
+        return [dict(row) for row in rows]
+
     def get_customer(self, customer_id: str) -> dict[str, Any] | None:
         with self._connect() as connection:
             row = connection.execute(
@@ -142,6 +151,21 @@ class BusinessStore:
             rows = connection.execute(query, parameters).fetchall()
             orders = [
                 self._order_summary(connection, dict(row)) for row in rows
+            ]
+
+        return orders
+
+    def list_all_orders(self) -> list[dict[str, Any]]:
+        with self._connect() as connection:
+            rows = connection.execute(
+                "SELECT * FROM orders ORDER BY id"
+            ).fetchall()
+            orders = [
+                {
+                    "customer_id": row["customer_id"],
+                    **self._order_summary(connection, dict(row)),
+                }
+                for row in rows
             ]
 
         return orders

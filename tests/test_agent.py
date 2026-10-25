@@ -356,3 +356,20 @@ def test_format_for_prompt_handles_values():
     assert truncated.endswith(
         f"[truncated: {MAX_PROMPT_VALUE_CHARS + 1} characters in total]"
     )
+
+
+def test_history_is_placed_between_the_system_prompt_and_the_question():
+    agent, generator = make_agent([answer("CUS-1001 has two orders.")])
+    history = [
+        {"role": "user", "content": "Show me the orders of Elif."},
+        {"role": "assistant", "content": "Which Elif do you mean?"},
+    ]
+
+    agent.run("Elif Yılmaz.", history=history)
+
+    messages = generator.calls[0]["messages"]
+    assert messages[0]["role"] == "system"
+    assert messages[1:] == [
+        *history,
+        {"role": "user", "content": "Elif Yılmaz."},
+    ]
