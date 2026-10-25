@@ -457,6 +457,8 @@ The project includes tests for:
 * Tool Validator
 * Calculator
 * DateTime tool
+* DateDiff tool
+* Evaluation checks and runner
 
 Tests should be executed in the development environment.
 
@@ -510,6 +512,7 @@ enterprise-ai-agent/
 │   ├── test_api.py
 │   ├── test_calculator.py
 │   ├── test_config.py
+│   ├── test_date_diff.py
 │   ├── test_datetime_tool.py
 │   ├── test_e2e.py
 │   ├── test_evaluation_checks.py
@@ -529,6 +532,8 @@ enterprise-ai-agent/
 ├── docker-compose.prod.yml
 ├── requirements.txt
 ├── requirements-dev.txt
+├── ruff.toml
+├── LICENSE
 └── README.md
 ```
 
