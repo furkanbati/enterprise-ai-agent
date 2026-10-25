@@ -4,7 +4,11 @@ from ollama import ResponseError
 
 import app.providers.ollama as ollama_module
 from app.config import GENERATOR_TIMEOUT
-from app.generator import Generator
+from app.generator import (
+    Generator,
+    GeneratorResponseError,
+    GeneratorUnavailableError,
+)
 from app.models import ChatMessage, ChatToolCall
 from app.providers.ollama import OllamaProvider
 
@@ -233,8 +237,10 @@ def test_chat_rejects_invalid_responses(response, error):
     client = FakeClient(responses=[response])
     generator = create_generator(client)
 
-    with pytest.raises(ValueError, match=error):
+    with pytest.raises(GeneratorResponseError, match=error) as raised:
         generator.chat([])
+
+    assert isinstance(raised.value.__cause__, ValueError)
 
     assert len(client.calls) == 1
 
@@ -283,9 +289,10 @@ def test_chat_does_not_retry_client_error():
         errors=[ResponseError("model not found", status_code=404)],
     )
 
-    with pytest.raises(ResponseError):
+    with pytest.raises(GeneratorResponseError) as raised:
         create_generator(client).chat([])
 
+    assert isinstance(raised.value.__cause__, ResponseError)
     assert len(client.calls) == 1
 
 
@@ -300,9 +307,10 @@ def test_chat_does_not_retry_client_error():
 def test_chat_raises_after_max_retries(error):
     client = FakeClient(errors=[error, error, error])
 
-    with pytest.raises(type(error)):
+    with pytest.raises(GeneratorUnavailableError) as raised:
         create_generator(client).chat([])
 
+    assert raised.value.__cause__ is error
     assert len(client.calls) == 3
 
 
@@ -339,7 +347,7 @@ def test_chat_logs_failure_after_retries(caplog):
     client = FakeClient(errors=[error, error, error])
 
     with caplog.at_level("ERROR"):
-        with pytest.raises(ConnectionError):
+        with pytest.raises(GeneratorUnavailableError):
             create_generator(client).chat([])
 
     assert (

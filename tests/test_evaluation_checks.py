@@ -303,3 +303,31 @@ def test_fixed_datetime_tool_matches_the_real_tool_interface():
         "datetime": "2026-10-17T09:00:00+00:00",
         "weekday": "Saturday",
     }
+
+
+def test_answer_is_tool_verified_from_a_structured_tool_result():
+    result = AgentResult(
+        answer="The total was 104.80 EUR.",
+        steps=[
+            step(
+                tool="get_order",
+                result={
+                    "order_id": "ORD-5002",
+                    "items": [{"quantity": 2, "unit_price": 29.9}],
+                    "total": 104.8,
+                    "returnable": False,
+                },
+            )
+        ],
+    )
+
+    assert check(case(answer_number=104.8, tolerance=0.005), result).tool_verified
+
+
+def test_ids_in_tool_results_do_not_count_as_numbers():
+    result = AgentResult(
+        answer="Order 5001.",
+        steps=[step(tool="get_order", result={"order_id": "ORD-5001"})],
+    )
+
+    assert check(case(answer_number=5001), result).tool_verified is False

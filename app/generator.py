@@ -22,11 +22,25 @@ GENERATION_TOTAL = Counter(
 )
 
 
+class GeneratorError(Exception):
+    """The LLM call failed. Raised from the provider's own exception."""
+
+
+class GeneratorUnavailableError(GeneratorError):
+    """A retryable failure (connection, timeout, rate limit, 5xx) persisted."""
+
+
+class GeneratorResponseError(GeneratorError):
+    """The provider rejected the request or returned an invalid response."""
+
+
 class Generator:
     """Calls the configured LLM provider with retries and backoff.
 
     Which errors are retried is decided by the provider; the retry loop,
-    logging and metrics are the same for every provider.
+    logging and metrics are the same for every provider. Failures are
+    raised as GeneratorError subclasses, so callers do not depend on any
+    provider's SDK exceptions.
     """
 
     def __init__(
@@ -85,7 +99,7 @@ class Generator:
                         type(exc).__name__,
                         duration,
                     )
-                    raise
+                    raise GeneratorResponseError(str(exc)) from exc
 
                 logger.warning(
                     "Generator %s on attempt %s/%s: %s",
@@ -102,7 +116,7 @@ class Generator:
                         attempt_number,
                         duration,
                     )
-                    raise
+                    raise GeneratorUnavailableError(str(exc)) from exc
 
                 self._retry(
                     attempt=attempt,

@@ -1,9 +1,18 @@
-import httpx
+import pytest
 from fastapi.testclient import TestClient
 from prometheus_client import REGISTRY
 
 from app import api
+from app.agent import Agent
+from app.executor import Executor
+from app.generator import (
+    Generator,
+    GeneratorResponseError,
+    GeneratorUnavailableError,
+)
 from app.models import AgentResult, AgentStep
+from app.tool_registry import ToolRegistry
+from tools.calculator import CalculatorTool
 
 
 class FailingAgent:
@@ -20,10 +29,6 @@ class SuccessfulAgent:
 
     def run(self, question):
         return self.result
-
-
-class FakeResponseError(Exception):
-    pass
 
 
 def test_health_returns_ok():
@@ -84,102 +89,56 @@ def test_chat_returns_successful_response(monkeypatch):
     }
 
 
-def test_chat_returns_service_unavailable_when_ai_connection_fails(
-    monkeypatch,
-):
-    monkeypatch.setattr(
-        api,
-        "agent",
-        FailingAgent(ConnectionError("connection failed")),
-    )
+@pytest.mark.parametrize(
+    ("error", "status", "detail"),
+    [
+        (
+            GeneratorUnavailableError("connection failed"),
+            503,
+            "The AI service is temporarily unavailable.",
+        ),
+        (
+            GeneratorResponseError("invalid model response"),
+            502,
+            "The AI service returned an invalid response.",
+        ),
+    ],
+)
+def test_chat_maps_generator_errors(monkeypatch, error, status, detail):
+    monkeypatch.setattr(api, "agent", FailingAgent(error))
 
-    client = TestClient(api.app)
+    response = TestClient(api.app).post("/chat", json={"question": "Hello"})
 
-    response = client.post(
-        "/chat",
-        json={"question": "Hello"},
+    assert response.status_code == status
+    assert response.json() == {"detail": detail}
+
+
+class UnreachableProvider:
+    """A cloud provider whose SDK error is not known to the API."""
+
+    name = "openai"
+    model = "gpt-test"
+
+    def chat(self, messages, tools=None):
+        raise OSError("network unreachable")
+
+    def retry_reason(self, error):
+        return "connection failure"
+
+
+def test_chat_returns_service_unavailable_for_any_provider(monkeypatch):
+    registry = ToolRegistry([CalculatorTool()])
+    agent = Agent(
+        generator=Generator(UnreachableProvider(), max_retries=1, retry_base_delay=0),
+        executor=Executor(registry),
+        registry=registry,
     )
+    monkeypatch.setattr(api, "agent", agent)
+
+    response = TestClient(api.app).post("/chat", json={"question": "Hello"})
 
     assert response.status_code == 503
-    assert response.json() == {
-        "detail": "The AI service is temporarily unavailable."
-    }
 
-
-def test_chat_returns_service_unavailable_when_ai_request_times_out(
-    monkeypatch,
-):
-    monkeypatch.setattr(
-        api,
-        "agent",
-        FailingAgent(
-            httpx.TimeoutException("request timed out"),
-        ),
-    )
-
-    client = TestClient(api.app)
-
-    response = client.post(
-        "/chat",
-        json={"question": "Hello"},
-    )
-
-    assert response.status_code == 503
-    assert response.json() == {
-        "detail": "The AI service is temporarily unavailable."
-    }
-
-
-def test_chat_returns_bad_gateway_when_ai_response_error_occurs(
-    monkeypatch,
-):
-    monkeypatch.setattr(
-        api,
-        "ResponseError",
-        FakeResponseError,
-    )
-
-    monkeypatch.setattr(
-        api,
-        "agent",
-        FailingAgent(
-            FakeResponseError("upstream failure"),
-        ),
-    )
-
-    client = TestClient(api.app)
-
-    response = client.post(
-        "/chat",
-        json={"question": "Hello"},
-    )
-
-    assert response.status_code == 502
-    assert response.json() == {
-        "detail": "The AI service returned an invalid response."
-    }
-
-
-def test_chat_returns_bad_gateway_when_ai_response_is_invalid(
-    monkeypatch,
-):
-    monkeypatch.setattr(
-        api,
-        "agent",
-        FailingAgent(ValueError("invalid model response")),
-    )
-
-    client = TestClient(api.app)
-
-    response = client.post(
-        "/chat",
-        json={"question": "Hello"},
-    )
-
-    assert response.status_code == 502
-    assert response.json() == {
-        "detail": "The AI service returned an invalid response."
-    }
 
 def test_chat_returns_internal_server_error_for_unexpected_exception(
     monkeypatch,

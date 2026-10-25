@@ -4,9 +4,12 @@ A production-oriented AI agent built with **FastAPI** and native tool calling. I
 
 The agent answers a question by running a tool calling loop: on each turn the model either calls one of the registered tools or gives the final answer. Tool results and errors are fed back into the conversation, so the agent can chain several tools and correct its own failed calls. Every tool call runs through a validated, time-limited executor, and the full trace is returned with the answer.
 
+It ships with a **customer support scenario** for an online electronics store: the agent looks up customers and orders, checks shipping and return status, answers from the store's policies, and opens support tickets, on demo data in SQLite.
+
 The project focuses on a small but robust agent runtime with:
 
 * Native tool calling with multi-step tool chaining
+* Business tools for customers, orders, policies and support tickets
 * Ollama, OpenAI (and compatible APIs) or Anthropic behind one provider interface
 * Self-correction from tool errors
 * Bounded loops with code-enforced safeguards
@@ -182,9 +185,44 @@ The loop is bounded, and the important rules are enforced in code:
 
 ---
 
+# Customer Support Scenario
+
+The support tools work on a small online electronics store: 6 customers, 8 orders and 6 policy sections, created in SQLite (`BUSINESS_DB_PATH`) on first use. The demo data includes a late delivery, a return window that has just closed, one that is still open, and orders that can still be cancelled.
+
+| Tool | What it does |
+|---|---|
+| `find_customer` | Finds customers by email, name or ID. Returns several matches when a name is ambiguous, so the agent can ask which one is meant. |
+| `list_customer_orders` | Lists a customer's orders, optionally by status. |
+| `get_order` | Items, total, tracking, and computed facts: `delivery_late`, `days_past_estimated_delivery`, `return_window_ends`, `returnable`, `cancellable`. |
+| `search_policies` | Returns the policy sections that match a question, or says that none matches. |
+| `create_support_ticket` | Opens a ticket for a customer and, optionally, one of their orders. |
+
+An example, recorded as a test with the real tools ([`test_support_tools.py`](tests/test_support_tools.py)):
+
+```text
+"Elif's headphones have not arrived. Please open a ticket."
+   → find_customer {"query": "elif.yilmaz@example.com"}        → CUS-1001
+   → get_order {"order_id": "ORD-5001"}                       → delivery_late: true, 9 days past the estimate
+   → create_support_ticket {"customer_id": "CUS-1001", "order_id": "ORD-5001",
+                            "category": "delivery", "priority": "high", ...} → TCK-1001
+   → "Ticket TCK-1001 is open for ORD-5001."
+```
+
+Design decisions:
+
+* **The tools compute what depends on today's date.** Whether an order is late or still returnable comes from the tool, not from the model. The evaluation showed the model getting date arithmetic wrong until a tool returned the answer (see the weekday and `date_diff` results below).
+* **Ticket creation is idempotent.** A model can repeat a call, and a timed-out call keeps running in its thread. An open ticket for the same customer, order and category is returned (`"created": false`) instead of a duplicate. The check and the insert run in one SQLite transaction, so concurrent calls also create one ticket.
+* **Arguments are validated before anything runs.** IDs must match `CUS-0000` / `ORD-0000`, categories and priorities are enums, and an order must belong to the customer on the ticket. Errors go back to the model with a hint, such as "use find_customer to look up the ID".
+* **Data minimisation.** The tools return what a support conversation needs, with no addresses, phone numbers or payment details.
+* **Tool results reach the model as JSON**, which models read more reliably than Python's repr.
+
+Policy search matches keywords over six short sections. Searching real policy documents (RAG) would replace it behind the same tool.
+
+---
+
 # Available Tools
 
-The current implementation intentionally keeps the tool set small and focused.
+Besides the support tools, the agent has three general tools.
 
 ## Calculator
 
@@ -380,6 +418,7 @@ The application is configured through environment variables.
 | OPENAI_API_KEY        |                        | Required for `openai`             |
 | OPENAI_BASE_URL       | OpenAI API             | Any OpenAI-compatible API         |
 | ANTHROPIC_API_KEY     |                        | Required for `anthropic`          |
+| BUSINESS_DB_PATH      | var/business.db        | SQLite file for the demo data     |
 | GENERATOR_MAX_RETRIES | 3                      | Maximum LLM retry attempts        |
 | EXECUTOR_MAX_RETRIES  | 2                      | Maximum tool retry attempts       |
 | AGENT_MAX_STEPS       | 5                      | Maximum tool calls per request    |
@@ -487,6 +526,7 @@ The project includes tests for:
 * Calculator
 * DateTime tool
 * DateDiff tool
+* Support tools and the SQLite store
 * Evaluation checks and runner
 
 Tests should be executed in the development environment.
@@ -523,7 +563,12 @@ enterprise-ai-agent/
 │   ├── base.py             Tool interface
 │   ├── calculator.py       Calculator tool
 │   ├── date_diff.py        Days between two dates
-│   └── datetime_tool.py    Date and time tool
+│   ├── datetime_tool.py    Date and time tool
+│   └── support.py          Customer, order, policy and ticket tools
+│
+├── business/
+│   ├── seed.py             Demo customers, orders and policies
+│   └── store.py            SQLite store
 │
 ├── docs/
 │   ├── architecture.md
@@ -552,6 +597,7 @@ enterprise-ai-agent/
 │   ├── test_generator.py
 │   ├── test_models.py
 │   ├── test_providers.py
+│   ├── test_support_tools.py
 │   ├── test_tool_registry.py
 │   └── test_tool_validator.py
 │
@@ -573,12 +619,10 @@ enterprise-ai-agent/
 
 # Current Scope
 
-The current implementation focuses on the core agent runtime and intentionally keeps the available tools small.
+The support scenario runs on demo data in SQLite. It does not currently include:
 
-It does not currently include:
-
-* External SaaS/API tools
-* Document retrieval
+* Connectors to real systems (CRM, order management, ticketing)
+* Document retrieval over real policy documents
 * Authentication and authorization
 * Conversation persistence
 * Web-based UI
@@ -591,9 +635,9 @@ The architecture is designed so these capabilities can be introduced as addition
 
 The `evaluation/` package measures the agent against labelled cases with a real model, so changes to tools, prompts or models can be compared with numbers.
 
-The bundled dataset, [`evaluation/datasets/agent_cases.jsonl`](evaluation/datasets/agent_cases.jsonl), has 21 cases in seven categories: no tool needed, single tool, date questions, chained tools, multi-step calculations, self-correction and rejected requests. Each case is run several times, because the same question can pass in one run and fail in the next.
+The bundled dataset, [`evaluation/datasets/agent_cases.jsonl`](evaluation/datasets/agent_cases.jsonl), has 30 cases in eight categories: no tool needed, single tool, date questions, chained tools, multi-step calculations, self-correction, rejected requests and customer support. The support cases check order status, late deliveries, return windows, policy answers, an ambiguous customer name, that no ticket is opened when none was asked for, and that one is opened when it was. Each case is run several times, because the same question can pass in one run and fail in the next.
 
-During evaluation the `datetime` tool is replaced by one that always reports `2026-10-17T09:00:00Z`, so answers such as "69 days until Christmas" stay stable.
+During evaluation the `datetime` tool is replaced by one that always reports `2026-10-17T09:00:00Z`, so answers such as "69 days until Christmas" stay stable. The support tools use the same clock and a fresh copy of the demo data.
 
 ### Metrics
 
@@ -626,6 +670,8 @@ docker compose cp agent-api:/app/evaluation/results ./evaluation/
 ```
 
 ### Results: qwen2.5:7b
+
+These results were recorded before the support tools and the support system prompt were added, with the 21 general cases.
 
 21 cases, 3 runs each, after each change. Reports: [baseline](evaluation/results/qwen2.5-7b-baseline.md), [+ weekday](evaluation/results/qwen2.5-7b-weekday.md), [+ date_diff](evaluation/results/qwen2.5-7b.md).
 
@@ -715,8 +761,8 @@ The answer checks are lexical: a case passes if the expected number appears anyw
 
 Possible next steps include:
 
-* Document search as an agent tool (Agentic RAG)
-* Additional external API tools
+* Document search over real policy documents (Agentic RAG)
+* Connectors to real CRM, order and ticketing systems
 * Authentication and authorization
 * Conversation memory
 * Streaming responses

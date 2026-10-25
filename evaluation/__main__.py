@@ -11,6 +11,7 @@ Usage (the provider and model default to LLM_PROVIDER and CHAT_MODEL):
 
 import argparse
 import logging
+import tempfile
 import time
 from datetime import datetime, timezone
 from pathlib import Path
@@ -21,12 +22,14 @@ from app.executor import Executor
 from app.generator import Generator
 from app.providers import create_provider
 from app.tool_registry import ToolRegistry
+from business.store import BusinessStore
 from evaluation.dataset import CATEGORIES, load_cases
 from evaluation.report import write_reports
 from evaluation.runner import Evaluator, RunRecord
 from evaluation.tools import EVALUATION_NOW, FixedDateTimeTool
 from tools.calculator import CalculatorTool
 from tools.date_diff import DateDiffTool
+from tools.support import support_tools
 
 
 DEFAULT_DATASET = Path(__file__).parent / "datasets" / "agent_cases.jsonl"
@@ -88,8 +91,19 @@ def main() -> None:
             "Check the model name and the API key."
         )
 
+    # A fresh copy of the demo data on the evaluation clock, so that
+    # tickets from earlier runs and the real date do not change results.
+    store = BusinessStore(
+        Path(tempfile.mkdtemp()) / "business.db",
+        clock=lambda: EVALUATION_NOW,
+    )
     registry = ToolRegistry(
-        [CalculatorTool(), FixedDateTimeTool(), DateDiffTool()]
+        [
+            *support_tools(store),
+            CalculatorTool(),
+            FixedDateTimeTool(),
+            DateDiffTool(),
+        ]
     )
     agent = Agent(
         generator=generator,

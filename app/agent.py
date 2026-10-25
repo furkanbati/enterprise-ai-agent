@@ -1,3 +1,4 @@
+import json
 import logging
 from typing import Any
 
@@ -33,14 +34,20 @@ AGENT_STEP_LIMIT_REACHED_TOTAL = Counter(
 
 
 SYSTEM_PROMPT = """
-You are a helpful AI assistant with access to tools.
+You are a helpful AI assistant for the customer support team of an online
+electronics store, with access to tools.
 
-Use a tool whenever it is needed to answer accurately, for example for
-calculations or the current date and time. You may call tools several
-times and use earlier results in later calls.
+Use a tool whenever it is needed to answer accurately: for customers,
+orders, store policies and support tickets, and for calculations or the
+current date and time. You may call tools several times and use earlier
+results in later calls.
 
 Rules:
-- Never invent tool results.
+- Never invent tool results, order details or policy terms.
+- Look up a customer's ID with find_customer before using it. If several
+  customers match, ask which one is meant.
+- Create a support ticket only when the user asks for one or the issue
+  needs follow-up, and only once per issue.
 - If a tool reports an error you can fix, such as a malformed expression,
   call it again with corrected arguments. Keep the user's values.
 - If a tool rejects a request, explain the reason to the user. Do not
@@ -66,10 +73,17 @@ MAX_PROMPT_VALUE_CHARS = 4_000
 
 
 def format_for_prompt(value) -> str:
-    """Render a tool value as bounded text for an LLM prompt."""
+    """Render a tool value as bounded text for an LLM prompt.
+
+    Dicts and lists are rendered as JSON, which models read more reliably
+    than Python's repr.
+    """
 
     try:
-        text = str(value)
+        if isinstance(value, (dict, list)):
+            text = json.dumps(value, ensure_ascii=False, default=str)
+        else:
+            text = str(value)
     except ValueError:
         # str() refuses integers above Python's digit conversion limit.
         return "[value too large to display]"
