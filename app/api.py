@@ -8,6 +8,7 @@ from prometheus_client import Counter, Histogram, make_asgi_app
 from pydantic import BaseModel, Field, field_validator
 
 from app.agent import Agent
+from app.config import BUSINESS_DB_PATH
 from app.executor import Executor
 from app.generator import (
     Generator,
@@ -23,9 +24,11 @@ from app.logging import (
 )
 from app.models import AgentResult
 from app.tool_registry import ToolRegistry
+from business.store import BusinessStore
 from tools.calculator import CalculatorTool
 from tools.date_diff import DateDiffTool
 from tools.datetime_tool import DateTimeTool
+from tools.support import support_tools
 
 
 configure_logging()
@@ -84,8 +87,11 @@ class ChatResponse(BaseModel):
     steps: list[StepResponse] = []
 
 
+store = BusinessStore(BUSINESS_DB_PATH)
+
 registry = ToolRegistry(
     [
+        *support_tools(store),
         CalculatorTool(),
         DateTimeTool(),
         DateDiffTool(),

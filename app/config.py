@@ -46,6 +46,13 @@ TOOL_TIMEOUT = float(
 )
 
 
+# SQLite database for the support scenario, created with demo data on
+# first use.
+BUSINESS_DB_PATH = os.getenv(
+    "BUSINESS_DB_PATH",
+    "var/business.db",
+)
+
 GENERATOR_TIMEOUT = float(
     os.getenv("GENERATOR_TIMEOUT", "120.0")
 )

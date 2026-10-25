@@ -26,6 +26,7 @@ logs/
 
 # Local data
 data/
+var/
 *.db
 *.sqlite
 *.sqlite3

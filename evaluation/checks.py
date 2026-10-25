@@ -138,15 +138,30 @@ def _check_tool_verified(
     if case.answer_number is None:
         return None
 
-    for step in result.steps:
-        if not step.success or isinstance(step.result, bool):
-            continue
+    return any(
+        numbers_match(number, case.answer_number, case.tolerance)
+        for step in result.steps
+        if step.success
+        for number in _numbers_in(step.result)
+    )
 
-        if isinstance(step.result, (int, float)) and numbers_match(
-            step.result,
-            case.answer_number,
-            case.tolerance,
-        ):
-            return True
 
-    return False
+def _numbers_in(value) -> list[float]:
+    """Numbers in a tool result, including those inside dicts and lists.
+
+    Strings are not searched: "ORD-5001" is an ID, not the number 5001.
+    """
+
+    if isinstance(value, bool):
+        return []
+
+    if isinstance(value, (int, float)):
+        return [value]
+
+    if isinstance(value, dict):
+        value = list(value.values())
+
+    if isinstance(value, list):
+        return [number for item in value for number in _numbers_in(item)]
+
+    return []

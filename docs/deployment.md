@@ -329,6 +329,7 @@ The API configuration is controlled through environment variables.
 | `OPENAI_API_KEY`        |                          | OpenAI API key         |
 | `OPENAI_BASE_URL`       | OpenAI API               | OpenAI-compatible API  |
 | `ANTHROPIC_API_KEY`     |                          | Anthropic API key      |
+| `BUSINESS_DB_PATH`      | `var/business.db`        | Support demo database  |
 | `GENERATOR_MAX_RETRIES` | `3`                      | LLM retry limit        |
 | `EXECUTOR_MAX_RETRIES`  | `2`                      | Tool retry limit       |
 | `AGENT_MAX_STEPS`       | `5`                      | Tool calls per request |
@@ -343,6 +344,8 @@ OLLAMA_HOST: http://ollama:11434
 ```
 
 because `ollama` is the Docker Compose service name.
+
+The support demo database is created inside the container on first use. It is not on a volume, so recreating the container resets the demo data and any tickets.
 
 The provider, model and API keys are read from an optional `.env` file next to the Compose files (`env_file` with `required: false`, Docker Compose 2.24 or later). `.env.example` lists the variables. `.env` is excluded from Git and from the Docker build context, so keys are not baked into the image.
 

@@ -11,6 +11,7 @@ CATEGORIES = (
     "multi_step",
     "self_correction",
     "rejection",
+    "support",
 )
 
 
