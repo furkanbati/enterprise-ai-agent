@@ -1,5 +1,19 @@
 import os
 
+LLM_PROVIDERS = ("ollama", "openai", "anthropic")
+
+# Used when CHAT_MODEL is not set. OpenAI has no default: its model names
+# change often, so the model must be chosen explicitly.
+DEFAULT_MODELS = {
+    "ollama": "qwen2.5:7b",
+    "anthropic": "claude-opus-5-5",
+}
+
+# A blank value, e.g. "LLM_PROVIDER=" in .env, means the default.
+LLM_PROVIDER = (
+    os.getenv("LLM_PROVIDER", "").strip().lower() or "ollama"
+)
+
 OLLAMA_HOST = os.getenv(
     "OLLAMA_HOST",
     "http://localhost:11434",
@@ -7,7 +21,7 @@ OLLAMA_HOST = os.getenv(
 
 CHAT_MODEL = os.getenv(
     "CHAT_MODEL",
-    "qwen2.5:7b",
+    DEFAULT_MODELS.get(LLM_PROVIDER, ""),
 )
 GENERATOR_MAX_RETRIES = int(
     os.getenv("GENERATOR_MAX_RETRIES", "3")
@@ -53,6 +67,16 @@ if RETRY_BASE_DELAY < 0:
 if not OLLAMA_HOST.strip():
     raise ValueError(
         "OLLAMA_HOST cannot be empty."
+    )
+
+if LLM_PROVIDER not in LLM_PROVIDERS:
+    raise ValueError(
+        "LLM_PROVIDER must be one of: " + ", ".join(LLM_PROVIDERS) + "."
+    )
+
+if "CHAT_MODEL" not in os.environ and LLM_PROVIDER not in DEFAULT_MODELS:
+    raise ValueError(
+        f"CHAT_MODEL must be set when LLM_PROVIDER is {LLM_PROVIDER}."
     )
 
 if not CHAT_MODEL.strip():

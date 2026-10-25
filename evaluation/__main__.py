@@ -1,10 +1,12 @@
 """Evaluate the agent against the labelled cases with a real model.
 
-Usage (with Ollama reachable at OLLAMA_HOST):
+Usage (the provider and model default to LLM_PROVIDER and CHAT_MODEL):
 
     python -m evaluation
     python -m evaluation --model llama3.1:8b --repeats 5
     python -m evaluation --categories chain date
+    python -m evaluation --provider openai --model <model>
+    python -m evaluation --provider anthropic
 """
 
 import argparse
@@ -14,9 +16,10 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from app.agent import Agent
-from app.config import AGENT_MAX_STEPS, CHAT_MODEL, OLLAMA_HOST
+from app.config import AGENT_MAX_STEPS, LLM_PROVIDER, LLM_PROVIDERS, OLLAMA_HOST
 from app.executor import Executor
 from app.generator import Generator
+from app.providers import create_provider
 from app.tool_registry import ToolRegistry
 from evaluation.dataset import CATEGORIES, load_cases
 from evaluation.report import write_reports
@@ -35,7 +38,15 @@ def parse_args() -> argparse.Namespace:
         prog="python -m evaluation",
         description="Evaluate the agent against labelled cases.",
     )
-    parser.add_argument("--model", default=CHAT_MODEL)
+    parser.add_argument(
+        "--provider",
+        choices=LLM_PROVIDERS,
+        default=LLM_PROVIDER,
+    )
+    parser.add_argument(
+        "--model",
+        help="Defaults to CHAT_MODEL, or the provider's default model.",
+    )
     parser.add_argument("--repeats", type=int, default=3)
     parser.add_argument("--dataset", type=Path, default=DEFAULT_DATASET)
     parser.add_argument("--output", type=Path, default=DEFAULT_OUTPUT)
@@ -60,12 +71,21 @@ def main() -> None:
     if args.categories:
         cases = [case for case in cases if case.category in args.categories]
 
-    generator = Generator(model=args.model)
+    generator = Generator(
+        provider=create_provider(args.provider, model=args.model),
+    )
+    model = generator.model
 
     if not generator.is_available():
+        if args.provider == "ollama":
+            raise SystemExit(
+                f"Model '{model}' is not available at {OLLAMA_HOST}. "
+                f"Pull it first: ollama pull {model}"
+            )
+
         raise SystemExit(
-            f"Model '{args.model}' is not available at {OLLAMA_HOST}. "
-            f"Pull it first: ollama pull {args.model}"
+            f"Model '{model}' is not available from {args.provider}. "
+            "Check the model name and the API key."
         )
 
     registry = ToolRegistry(
@@ -96,7 +116,8 @@ def main() -> None:
     duration_min = (time.perf_counter() - started) / 60
 
     metadata = {
-        "Model": args.model,
+        "Provider": args.provider,
+        "Model": model,
         "Date": datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC"),
         "Dataset": args.dataset.name,
         "Evaluation clock": EVALUATION_NOW.isoformat(),
@@ -107,7 +128,7 @@ def main() -> None:
     json_path, markdown_path = write_reports(
         report,
         args.output,
-        args.model,
+        model,
         metadata,
     )
 

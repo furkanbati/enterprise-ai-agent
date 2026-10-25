@@ -129,3 +129,59 @@ def test_config_validation_runs_under_coverage(
         name,
         value,
     )
+
+def import_config(**overrides):
+    environment = {
+        key: value
+        for key, value in os.environ.items()
+        if key not in ("LLM_PROVIDER", "CHAT_MODEL")
+    }
+    environment.update(overrides)
+
+    return subprocess.run(
+        [
+            sys.executable,
+            "-c",
+            "import app.config as c; print(c.LLM_PROVIDER, c.CHAT_MODEL)",
+        ],
+        env=environment,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+
+@pytest.mark.parametrize(
+    ("provider", "expected"),
+    [
+        ("ollama", "ollama qwen2.5:7b"),
+        ("anthropic", "anthropic claude-opus-5-5"),
+        (" Anthropic ", "anthropic claude-opus-5-5"),
+    ],
+)
+def test_uses_the_provider_default_model(provider, expected):
+    result = import_config(LLM_PROVIDER=provider)
+
+    assert result.returncode == 0, result.stderr
+    assert result.stdout.strip() == expected
+
+
+def test_requires_a_model_for_openai():
+    result = import_config(LLM_PROVIDER="openai")
+
+    assert result.returncode != 0
+    assert "CHAT_MODEL must be set when LLM_PROVIDER is openai." in result.stderr
+
+
+def test_accepts_openai_with_a_model():
+    result = import_config(LLM_PROVIDER="openai", CHAT_MODEL="gpt-test")
+
+    assert result.returncode == 0, result.stderr
+    assert result.stdout.strip() == "openai gpt-test"
+
+
+def test_rejects_unknown_provider():
+    result = import_config(LLM_PROVIDER="gemini")
+
+    assert result.returncode != 0
+    assert "LLM_PROVIDER must be one of: ollama, openai, anthropic." in result.stderr

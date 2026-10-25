@@ -31,6 +31,9 @@ class ChatToolCall:
 
     name: str
     arguments: dict[str, Any]
+    # Set by providers that match tool results to calls by ID (OpenAI,
+    # Anthropic). Ollama does not use IDs.
+    id: str | None = None
 
 
 @dataclass
@@ -39,6 +42,9 @@ class ChatMessage:
 
     content: str
     tool_calls: list[ChatToolCall] = field(default_factory=list)
+    # The provider's own form of the message, sent back unchanged on the
+    # next turn when the provider needs it (Anthropic thinking blocks).
+    provider_content: Any = None
 
 
 @dataclass
