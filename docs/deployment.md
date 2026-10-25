@@ -174,7 +174,7 @@ Checks application readiness:
 curl.exe -i http://localhost:8000/ready
 ```
 
-The readiness check verifies that Ollama and the configured model are available.
+The readiness check verifies that the configured provider and model are available.
 
 If the required dependency is unavailable, the endpoint returns:
 
@@ -323,8 +323,12 @@ The API configuration is controlled through environment variables.
 
 | Variable                | Default                  | Description            |
 | ----------------------- | ------------------------ | ---------------------- |
+| `LLM_PROVIDER`          | `ollama`                 | `ollama`, `openai`, `anthropic` |
+| `CHAT_MODEL`            | per provider             | LLM model              |
 | `OLLAMA_HOST`           | `http://localhost:11434` | Ollama endpoint        |
-| `CHAT_MODEL`            | `qwen2.5:7b`             | LLM model              |
+| `OPENAI_API_KEY`        |                          | OpenAI API key         |
+| `OPENAI_BASE_URL`       | OpenAI API               | OpenAI-compatible API  |
+| `ANTHROPIC_API_KEY`     |                          | Anthropic API key      |
 | `GENERATOR_MAX_RETRIES` | `3`                      | LLM retry limit        |
 | `EXECUTOR_MAX_RETRIES`  | `2`                      | Tool retry limit       |
 | `AGENT_MAX_STEPS`       | `5`                      | Tool calls per request |
@@ -339,6 +343,8 @@ OLLAMA_HOST: http://ollama:11434
 ```
 
 because `ollama` is the Docker Compose service name.
+
+The provider, model and API keys are read from an optional `.env` file next to the Compose files (`env_file` with `required: false`, Docker Compose 2.24 or later). `.env.example` lists the variables. `.env` is excluded from Git and from the Docker build context, so keys are not baked into the image.
 
 ---
 

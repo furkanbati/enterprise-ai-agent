@@ -4,9 +4,12 @@ services:
     container_name: agent-api
     ports:
       - "8000:8000"
+    # LLM_PROVIDER, CHAT_MODEL and API keys come from .env (see .env.example).
+    env_file:
+      - path: .env
+        required: false
     environment:
       OLLAMA_HOST: http://ollama:11434
-      CHAT_MODEL: qwen2.5:7b
     depends_on:
       ollama:
         condition: service_healthy

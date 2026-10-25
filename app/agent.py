@@ -6,7 +6,14 @@ from prometheus_client import Counter, Histogram
 from app.config import AGENT_MAX_STEPS
 from app.executor import Executor
 from app.generator import Generator
-from app.models import AgentResult, AgentStep, ChatToolCall, ToolCall, ToolResult
+from app.models import (
+    AgentResult,
+    AgentStep,
+    ChatMessage,
+    ChatToolCall,
+    ToolCall,
+    ToolResult,
+)
 from app.tool_registry import ToolRegistry
 
 
@@ -123,13 +130,13 @@ class Agent:
                     steps,
                 )
 
-            messages.append(self._assistant_message(message.tool_calls))
+            messages.append(self._assistant_message(message))
 
             for tool_call in message.tool_calls:
                 if len(steps) >= self.max_steps:
                     messages.append(
                         self._tool_message(
-                            tool_call.name,
+                            tool_call,
                             "Not executed: the tool call limit was reached.",
                         )
                     )
@@ -139,7 +146,7 @@ class Agent:
 
                 messages.append(
                     self._tool_message(
-                        tool_call.name,
+                        tool_call,
                         self._describe_result(result),
                     )
                 )
@@ -234,27 +241,42 @@ class Agent:
         return f"Error: {format_for_prompt(result.error)}"
 
     @staticmethod
-    def _assistant_message(
-        tool_calls: list[ChatToolCall],
-    ) -> dict[str, Any]:
-        return {
+    def _assistant_message(message: ChatMessage) -> dict[str, Any]:
+        tool_calls = []
+
+        for tool_call in message.tool_calls:
+            entry: dict[str, Any] = {
+                "function": {
+                    "name": tool_call.name,
+                    "arguments": tool_call.arguments,
+                }
+            }
+
+            if tool_call.id is not None:
+                entry["id"] = tool_call.id
+
+            tool_calls.append(entry)
+
+        assistant: dict[str, Any] = {
             "role": "assistant",
             "content": "",
-            "tool_calls": [
-                {
-                    "function": {
-                        "name": tool_call.name,
-                        "arguments": tool_call.arguments,
-                    }
-                }
-                for tool_call in tool_calls
-            ],
+            "tool_calls": tool_calls,
         }
 
+        if message.provider_content is not None:
+            assistant["provider_content"] = message.provider_content
+
+        return assistant
+
     @staticmethod
-    def _tool_message(tool_name: str, content: str) -> dict[str, Any]:
-        return {
+    def _tool_message(tool_call: ChatToolCall, content: str) -> dict[str, Any]:
+        tool_message = {
             "role": "tool",
-            "tool_name": tool_name,
+            "tool_name": tool_call.name,
             "content": content,
         }
+
+        if tool_call.id is not None:
+            tool_message["tool_call_id"] = tool_call.id
+
+        return tool_message

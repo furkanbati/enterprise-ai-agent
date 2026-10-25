@@ -15,7 +15,7 @@ User question
      ↓
   FastAPI  (/chat, request validation, request ID)
      ↓
-   Agent ──────────────► Generator (Ollama, with tool schemas)
+   Agent ──────────────► Generator ──► Provider (Ollama | OpenAI | Anthropic)
      ↑                        ↓
      │                 Tool calls requested?
      │                  ├── No  → Final answer + steps
@@ -120,11 +120,27 @@ Tool results and errors passed back to the model are limited to 4,000 characters
 
 ### Generator
 
-Communicates with Ollama.
+Calls the configured LLM provider.
 
 * `chat(messages, tools)` sends a conversation with tool schemas and returns a `ChatMessage` with content and tool calls
 * Tool calls are normalised; JSON-string arguments are decoded, and calls without a name or with non-object arguments are rejected
-* Applies `GENERATOR_TIMEOUT`, retries connection errors, timeouts and 5xx responses with exponential backoff
+* Retries connection errors, timeouts, rate limits and 5xx responses with exponential backoff; the provider decides which of its errors are retryable
+
+### Providers
+
+`app/providers/` holds one adapter per LLM API, behind the `ChatProvider` interface: `chat`, `is_available` and `retry_reason`.
+
+The agent builds the conversation in one neutral format. Each provider converts it to its API:
+
+| | Ollama | OpenAI | Anthropic |
+|---|---|---|---|
+| System prompt | `system` message | `system` message | `system` parameter |
+| Tool call IDs | not used | `tool_call_id` | `tool_use_id` |
+| Tool arguments | object | JSON string | object |
+| Tool results | one `tool` message each | one `tool` message each | `tool_result` blocks in one user turn |
+| Tools withdrawn | tools omitted | tools omitted | tools declared with `tool_choice: none` |
+
+Anthropic responses are sent back unchanged on the next turn (`provider_content`), because thinking blocks must stay with the tool calls they belong to. The provider applies `GENERATOR_TIMEOUT`, and the SDKs' own retries are turned off so the Generator is the only place that retries.
 
 ### Executor
 
@@ -151,8 +167,12 @@ Arguments are validated against each tool's JSON Schema before execution. Tool s
 Application behavior is controlled through environment variables:
 
 ```text
-OLLAMA_HOST
+LLM_PROVIDER
 CHAT_MODEL
+OLLAMA_HOST
+OPENAI_API_KEY
+OPENAI_BASE_URL
+ANTHROPIC_API_KEY
 
 AGENT_MAX_STEPS
 GENERATOR_MAX_RETRIES
@@ -165,7 +185,7 @@ GENERATOR_TIMEOUT
 
 Configuration is validated during startup. Invalid values prevent the application from starting.
 
-`CHAT_MODEL` must support tool calling in Ollama. The default is `qwen2.5:7b`; `llama3` does not support tools.
+`CHAT_MODEL` must support tool calling. The default is `qwen2.5:7b` for Ollama (`llama3` does not support tools) and `claude-opus-5-5` for Anthropic; OpenAI requires `CHAT_MODEL` to be set.
 
 ---
 
@@ -219,7 +239,7 @@ Verifies that the API process is alive.
 /ready
 ```
 
-Verifies that Ollama is reachable and the configured model is available.
+Verifies that the configured provider is reachable and the model is available.
 
 ---
 

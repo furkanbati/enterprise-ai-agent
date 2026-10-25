@@ -1,12 +1,13 @@
 # Enterprise AI Agent
 
-A production-oriented AI agent built with **FastAPI**, **Ollama**, and native tool calling.
+A production-oriented AI agent built with **FastAPI** and native tool calling. It runs on a local model through **Ollama**, or on **OpenAI** or **Anthropic (Claude)**, selected with one environment variable.
 
 The agent answers a question by running a tool calling loop: on each turn the model either calls one of the registered tools or gives the final answer. Tool results and errors are fed back into the conversation, so the agent can chain several tools and correct its own failed calls. Every tool call runs through a validated, time-limited executor, and the full trace is returned with the answer.
 
 The project focuses on a small but robust agent runtime with:
 
 * Native tool calling with multi-step tool chaining
+* Ollama, OpenAI (and compatible APIs) or Anthropic behind one provider interface
 * Self-correction from tool errors
 * Bounded loops with code-enforced safeguards
 * JSON Schema argument validation
@@ -23,7 +24,7 @@ User question
      ↓
   FastAPI
      ↓
-   Agent ──────────────► Generator (Ollama, with tool schemas)
+   Agent ──────────────► Generator ──► Provider (Ollama | OpenAI | Anthropic)
      ↑                        ↓
      │                 Tool calls requested?
      │                  ├── No  → Final answer + steps
@@ -40,7 +41,8 @@ Responsibilities are split across small components:
 | Component | Responsibility |
 |---|---|
 | `Agent` | Runs the tool calling loop, enforces the step limit and safeguards |
-| `Generator` | Talks to Ollama; applies timeouts, retries and backoff |
+| `Generator` | Calls the configured provider; applies retries and backoff |
+| `ChatProvider` | Converts the conversation and tool schemas to one LLM API and back |
 | `Executor` | Validates arguments and runs a tool with a timeout |
 | `ToolRegistry` | Holds the tools and exposes their schemas to the model |
 | `ToolArgumentValidator` | Checks tool arguments against JSON Schema |
@@ -51,7 +53,8 @@ Each component can be tested on its own; the agent tests use a scripted model wi
 
 # What This Project Demonstrates
 
-* Native tool calling through Ollama instead of hand-parsed JSON
+* Native tool calling instead of hand-parsed JSON
+* One agent loop on three LLM APIs: the provider layer converts tool calls, tool results and IDs to each API
 * Multi-step reasoning: using one tool's result as input to the next
 * Recovery by feeding tool errors back to the model
 * Safeguards enforced in code rather than only in the prompt
@@ -224,13 +227,28 @@ New tools implement the `Tool` interface in `tools/base.py` and are added to the
 
 # Quick Start
 
+The default provider is Ollama, which runs the model locally. To use OpenAI or Anthropic instead, copy `.env.example` to `.env` and set the provider, model and API key:
+
+```text
+LLM_PROVIDER=openai
+CHAT_MODEL=<an OpenAI model with tool calling>
+OPENAI_API_KEY=...
+```
+
+```text
+LLM_PROVIDER=anthropic
+ANTHROPIC_API_KEY=...
+```
+
+Docker Compose reads `.env` automatically. With a cloud provider, pulling an Ollama model is not needed.
+
 Build and start the containers:
 
 ```powershell
 docker compose up -d --build
 ```
 
-Download the model inside the Ollama container:
+With Ollama, download the model inside the Ollama container:
 
 ```powershell
 docker compose exec ollama ollama pull qwen2.5:7b
@@ -272,8 +290,8 @@ Expected response:
 
 Checks whether:
 
-* Ollama is reachable
-* The configured model is available
+* The configured provider is reachable
+* The configured model is available (for Ollama: it has been pulled)
 
 ```powershell
 curl.exe -i http://localhost:8000/ready
@@ -287,7 +305,7 @@ Expected response:
 }
 ```
 
-If Ollama is unavailable or the configured model has not been downloaded, the endpoint returns:
+If the provider is unreachable, the API key is invalid, or the model is not available, the endpoint returns:
 
 ```text
 503 Service Unavailable
@@ -356,8 +374,12 @@ The application is configured through environment variables.
 
 | Variable              | Default                | Description                       |
 | --------------------- | ---------------------- | --------------------------------- |
+| LLM_PROVIDER          | ollama                 | `ollama`, `openai` or `anthropic` |
+| CHAT_MODEL            | per provider           | Model used for generation         |
 | OLLAMA_HOST           | http://localhost:11434 | Ollama server URL                 |
-| CHAT_MODEL            | qwen2.5:7b             | Model used for generation         |
+| OPENAI_API_KEY        |                        | Required for `openai`             |
+| OPENAI_BASE_URL       | OpenAI API             | Any OpenAI-compatible API         |
+| ANTHROPIC_API_KEY     |                        | Required for `anthropic`          |
 | GENERATOR_MAX_RETRIES | 3                      | Maximum LLM retry attempts        |
 | EXECUTOR_MAX_RETRIES  | 2                      | Maximum tool retry attempts       |
 | AGENT_MAX_STEPS       | 5                      | Maximum tool calls per request    |
@@ -365,10 +387,17 @@ The application is configured through environment variables.
 | TOOL_TIMEOUT          | 5.0                    | Tool execution timeout in seconds |
 | GENERATOR_TIMEOUT     | 120.0                  | LLM request timeout in seconds    |
 
+`CHAT_MODEL` defaults to `qwen2.5:7b` for Ollama and `claude-opus-5-5` for Anthropic. OpenAI has no default and needs `CHAT_MODEL`; the application refuses to start without it. The model must support tool calling.
+
+`OPENAI_BASE_URL` points the OpenAI provider at any API that implements Chat Completions with tool calling, such as Azure OpenAI, vLLM or Groq.
+
+The Generator does the retries for every provider, so the OpenAI and Anthropic SDKs' own retries are turned off. With Anthropic models that support it, refused requests are rerun on a fallback model by the API (server-side refusal fallbacks).
+
 Example:
 
 ```yaml
 environment:
+  LLM_PROVIDER: ollama
   CHAT_MODEL: qwen2.5:7b
   GENERATOR_MAX_RETRIES: 5
   EXECUTOR_MAX_RETRIES: 3
@@ -483,9 +512,10 @@ enterprise-ai-agent/
 │   ├── api.py              FastAPI endpoints
 │   ├── config.py           Configuration and validation
 │   ├── executor.py         Tool execution logic
-│   ├── generator.py        Ollama integration
+│   ├── generator.py        Retries and backoff around the provider
 │   ├── logging.py          Request ID logging
 │   ├── models.py           Shared models
+│   ├── providers/          Ollama, OpenAI and Anthropic adapters
 │   ├── tool_registry.py    Tool registration
 │   └── tool_validator.py   Tool argument validation
 │
@@ -511,6 +541,7 @@ enterprise-ai-agent/
 │   ├── test_agent.py
 │   ├── test_api.py
 │   ├── test_calculator.py
+│   ├── test_cloud_providers.py
 │   ├── test_config.py
 │   ├── test_date_diff.py
 │   ├── test_datetime_tool.py
@@ -520,6 +551,7 @@ enterprise-ai-agent/
 │   ├── test_executor.py
 │   ├── test_generator.py
 │   ├── test_models.py
+│   ├── test_providers.py
 │   ├── test_tool_registry.py
 │   └── test_tool_validator.py
 │
@@ -572,12 +604,19 @@ During evaluation the `datetime` tool is replaced by one that always reports `20
 
 ### Running the evaluation
 
-With Ollama running and the model pulled:
+The evaluation uses `LLM_PROVIDER` and `CHAT_MODEL` unless `--provider` and `--model` are given. With Ollama running and the model pulled:
 
 ```powershell
 docker compose exec agent-api python -m evaluation
 docker compose exec agent-api python -m evaluation --model llama3.1:8b --repeats 5
 docker compose exec agent-api python -m evaluation --categories chain date
+```
+
+With an API key in `.env`, the same cases run against a cloud model:
+
+```powershell
+docker compose exec agent-api python -m evaluation --provider openai --model <model>
+docker compose exec agent-api python -m evaluation --provider anthropic
 ```
 
 Reports are written to `evaluation/results/<model>.md` and `.json`, including a trace of the first failing run of each case. Inside the container they are not on a mounted volume; copy them out with:
